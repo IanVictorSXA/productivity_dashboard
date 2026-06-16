@@ -1,0 +1,18 @@
+FROM node:22
+
+WORKDIR /app
+
+# Copy package files first to leverage Docker cache layers
+COPY package*.json ./
+
+# Install all dependencies
+RUN npm install
+
+# Copy the rest of the application files
+COPY . .
+
+# Expose your application port (e.g., 5173)
+EXPOSE 5173
+
+# Run the live-reload script
+CMD ["npm", "run", "dev", "--", "--host"]

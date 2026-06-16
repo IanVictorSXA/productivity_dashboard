@@ -1,2 +1,5 @@
 copilot-instructions.md
 env/
+guidelines/
+imports/
+__pycache__/
