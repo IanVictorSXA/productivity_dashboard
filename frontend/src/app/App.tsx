@@ -282,7 +282,7 @@ export default function App() {
       setDurations(prev => prev.map(d => {
         if (d.subtype !== "timer" || d.alerting || d.startedAt === null) return d;
         if (getDisplayMs(d) <= 0) {
-          sendMessage({ id: d.id, command: "complete" });
+          sendMessage({ id: d.id, type: "duration", command: "ring" });
           return { ...d, startedAt: null, alerting: true };
         }
         return d;
@@ -311,16 +311,16 @@ export default function App() {
       return prev.map(d => {
         if (d.id === id) {
           if (willRun) {
-            sendMessage({ id: d.id, current_time: nowTimeStr(), command: "resume" });
+            sendMessage({ id: d.id, type: "duration", current_time: nowTimeStr(), command: "resume" });
             // startedAt = now; accumulatedMs unchanged — display = accumulated + 0
             return { ...d, startedAt: now };
           } else {
             // Freeze elapsed into accumulatedMs before clearing startedAt
             const elapsed = getElapsedMs(d, now);
             if (d.subtype === "timer") {
-              sendMessage({ id: d.id, remaining_time: fmtMs(Math.max(0, d.totalMs - elapsed)), command: "pause" });
+              sendMessage({ id: d.id, type: "duration", elapsed: fmtMs(elapsed), remaining_time: fmtMs(Math.max(0, d.totalMs - elapsed)), command: "pause" });
             } else {
-              sendMessage({ id: d.id, command: "pause" });
+              sendMessage({ id: d.id, type: "duration", elapsed: fmtMs(elapsed), command: "pause" });
             }
             return { ...d, accumulatedMs: elapsed, startedAt: null };
           }
@@ -329,7 +329,7 @@ export default function App() {
         // Mutex: starting a mutex stopwatch pauses all other running mutex stopwatches
         if (willRun && MUTEX_LABELS.includes(card.label) && MUTEX_LABELS.includes(d.label) && d.startedAt !== null) {
           const elapsed = getElapsedMs(d, now);
-          sendMessage({ id: d.id, command: "pause" });
+          sendMessage({ id: d.id, type: "duration", command: "pause" });
           return { ...d, accumulatedMs: elapsed, startedAt: null };
         }
 
@@ -344,7 +344,8 @@ export default function App() {
       const card = prev.find(d => d.id === id);
       if (card) {
         const elapsed  = getElapsedMs(card, Date.now());
-        const payload: Record<string, unknown> = { id, command: "delete" };
+        const payload: Record<string, unknown> = { id, type: "duration", command: "delete" };
+        payload.elapsed = fmtMs(elapsed);
         if (card.subtype === "timer") payload.remaining_time = fmtMs(Math.max(0, card.totalMs - elapsed));
         sendMessage(payload);
       }
@@ -432,7 +433,7 @@ export default function App() {
       const elapsed = getElapsedMs(card, now);
       pausedCard = { ...card, accumulatedMs: elapsed, startedAt: null };
       setDurations(prev => prev.map(d => d.id === card.id ? pausedCard : d));
-      sendMessage({ id: card.id, remaining_time: fmtMs(Math.max(0, card.totalMs - elapsed)), command: "pause" });
+      sendMessage({ id: card.id, type: "duration", elapsed: fmtMs(elapsed), remaining_time: fmtMs(Math.max(0, card.totalMs - elapsed)), command: "pause" });
     }
 
     // Pre-fill with remaining time (floor to seconds — what the user sees)
@@ -470,7 +471,7 @@ export default function App() {
       const now = Date.now();
       setDurations(prev => prev.map(d => {
         if (d.id !== editId) return d;
-        sendMessage({ id: d.id, current_time: nowTimeStr(), command: "resume" });
+        sendMessage({ id: d.id, type: "duration", current_time: nowTimeStr(), command: "resume" });
         return { ...d, startedAt: now };
       }));
     }
@@ -489,33 +490,34 @@ export default function App() {
         setDurations(prev => prev.map(d => d.id === editId ? { ...d, label: lbl } : d));
         sendMessage({ id: editId, type: "duration", type_duration: "stopwatch", task: lbl, command: "edit" });
 
-      } else if (mode === "duration" && subtype === "timer") {
-        // Timer edit: update label + remaining time; resume if it was running
-        setDurations(prev => {
-          const existing = prev.find(d => d.id === editId);
-          if (!existing) return prev;
+} else if (mode === "duration" && subtype === "timer") {
+  setDurations(prev => {
+    const existing = prev.find(d => d.id === editId);
+    if (!existing) return prev;
 
-          // hh/mm/ss = remaining time the user sees; compute new accumulatedMs
-          const newRemainingMs  = parseHhMmSs(hh, mm, ss);
-          const newAccumulatedMs = Math.max(0, existing.totalMs - newRemainingMs);
-          const resumeAt = editWasRunning ? Date.now() : null;
+    const newRemainingMs = parseHhMmSs(hh, mm, ss);
+    const newTotalMs = newRemainingMs;
+    const resumeAt = editWasRunning ? Date.now() : null;
 
-          sendMessage({
-            id: editId, type: "duration", type_duration: "timer", task: lbl,
-            current_time: nowTimeStr(),
-            total_time: fmtMs(existing.totalMs),
-            remaining_time: fmtMs(newRemainingMs),
-            command: "edit",
-          });
-          if (resumeAt !== null) {
-            sendMessage({ id: editId, current_time: nowTimeStr(), command: "resume" });
-          }
+    sendMessage({
+      id: editId,
+      type: "duration",
+      type_duration: "timer",
+      task: lbl,
+      current_time: nowTimeStr(),
+      total_time: fmtMs(newTotalMs),
+      remaining_time: fmtMs(newRemainingMs),
+      command: "edit",
+    });
+    if (resumeAt !== null) {
+      sendMessage({ id: editId, type: "duration", current_time: nowTimeStr(), command: "resume" });
+    }
 
-          return prev.map(d => d.id === editId
-            ? { ...d, label: lbl, accumulatedMs: newAccumulatedMs, startedAt: resumeAt }
-            : d
-          );
-        });
+    return prev.map(d => d.id === editId
+      ? { ...d, label: lbl, totalMs: newTotalMs, accumulatedMs: 0, startedAt: resumeAt }
+      : d
+    );
+  });
 
       } else if (mode === "event") {
         let ringTime: Date;
@@ -568,8 +570,25 @@ export default function App() {
   }, [modal]);
 
   // ── Dismiss alerts ──
-  const dismissEvent    = (id: number) => setEvents(prev => prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e));
-  const dismissDuration = (id: number) => setDurations(prev => prev.map(d => d.id === id ? { ...d, alerting: false } : d));
+  const dismissEvent = useCallback((id: number) => {
+  setEvents(prev => {
+    const card = prev.find(e => e.id === id);
+    if (card?.alerting) {
+      sendMessage({ id, type: "event", command: "stop ring", task: card.label });
+    }
+    return prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e);
+  });
+}, []);
+
+  const dismissDuration = useCallback((id: number) => {
+  setDurations(prev => {
+    const card = prev.find(d => d.id === id);
+    if (card?.alerting) {
+      sendMessage({ id, type: "duration", command: "stop ring" });
+    }
+    return prev.map(d => d.id === id ? { ...d, alerting: false } : d);
+  });
+}, []);
 
   // ── Shutdown: delete all cards, then send close ──
   const handleShutdown = useCallback(async () => {
@@ -578,7 +597,8 @@ export default function App() {
 
     for (const d of durations) {
       const elapsed = getElapsedMs(d, now);
-      const payload: Record<string, unknown> = { id: d.id, command: "delete" };
+      const payload: Record<string, unknown> = { id: d.id, type: "duration", command: "delete" };
+      payload.elapsed = elapsed;
       if (d.subtype === "timer") payload.remaining_time = fmtMs(Math.max(0, d.totalMs - elapsed));
       deletions.push(sendMessage(payload));
     }
