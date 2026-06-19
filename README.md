@@ -1,5 +1,9 @@
 python 3.11.15
 
+CODE BREAKS IF BACKEND GET GIVES MORE THAN 999 CARDS
+
+Timezone may bring bugs!
+
 ```bash
 git pull https://github.com/IanVictorSXA/productivity_dashboard.git
 ```
@@ -48,3 +52,52 @@ Event rings:
 ```Json
 { "id": 3, "type": "event", "command": "ring", "task": "Lunch 12pm" }
 ```
+
+get stopwatch json
+```Json
+{
+  "durations": [
+    {
+      "id": 1007,
+      "label": "Work",
+      "subtype": "stopwatch",
+      "total_ms": 0,
+      "accumulated_ms": 45000,
+      "started_at": null,
+      "alerting": false
+    }
+  ],
+  "events": [],
+  "tasks": []
+}
+```
+What each field means
+id
+
+Unique numeric identifier for the duration card.
+Used by the frontend to track and update the card.
+label
+
+The name shown on the card, e.g. "Work".
+subtype
+
+Must be "stopwatch" for a stopwatch card.
+The frontend treats "timer" differently.
+total_ms
+
+For stopwatches, this is effectively ignored.
+It can safely be 0 for stopwatch cards.
+accumulated_ms
+
+Total elapsed time already recorded before the current run.
+If the stopwatch is paused, this is the full elapsed time.
+If the stopwatch is running, it is prior elapsed time before the current start.
+started_at
+
+Epoch milliseconds when the stopwatch last started/resumed.
+If null, the stopwatch is paused/stopped.
+If set to a number, the frontend computes current elapsed time as accumulated_ms + (now - started_at).
+alerting
+
+Boolean for alert state.
+For normal stopwatches this should be false.

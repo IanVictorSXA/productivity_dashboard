@@ -54,8 +54,8 @@ type ApiDuration = {
   started_at: number | null; // epoch ms when last resumed; null = paused
   alerting: boolean;
 };
-type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean };
 type ApiTask  = { id: number; label: string; completed: boolean };
+type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean };
 type ApiState = { events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[] };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ const genId = () => ++_nextId;
 // ─── Pure time helpers ────────────────────────────────────────────────────────
 function nowTimeStr() {
   return new Date().toLocaleTimeString("en-US", {
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "UTC"
   });
 }
 
@@ -215,7 +215,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const state = await fetchState();
-
+      console.log("state", state);
       let loadedDurations: DurationCard[] = [];
       let loadedEvents:    EventCard[]    = [];
       let loadedTasks:     Task[]         = [];
@@ -232,14 +232,6 @@ export default function App() {
         loadedTasks = (state.tasks ?? []).map(t => ({
           id: t.id, label: t.label, completed: t.completed,
         }));
-      }
-
-      if (loadedTasks.length === 0) {
-        loadedTasks = [
-          { id: genId(), label: "Read book for 30 min", completed: true },
-          { id: genId(), label: "Code", completed: false },
-          { id: genId(), label: "Vacuum", completed: false },
-        ];
       }
 
       // Ensure Work / Misc / Waste stopwatches exist
@@ -282,7 +274,8 @@ export default function App() {
       setDurations(prev => prev.map(d => {
         if (d.subtype !== "timer" || d.alerting || d.startedAt === null) return d;
         if (getDisplayMs(d) <= 0) {
-          sendMessage({ id: d.id, type: "duration", command: "ring" });
+          const elapsed = getElapsedMs(d, Date.now());
+          sendMessage({ id: d.id, type: "duration", elapsed : fmtMs(elapsed), command: "ring" });
           return { ...d, startedAt: null, alerting: true };
         }
         return d;
@@ -371,7 +364,7 @@ export default function App() {
     setTasks(prev => prev.map(t => {
       if (t.id !== id) return t;
       const completed = !t.completed;
-      sendMessage({ id, type: "task", completed, command: "update" });
+      sendMessage({ id, type: "task", completed, command: "complete" });
       return { ...t, completed };
     }));
   };
@@ -383,7 +376,7 @@ export default function App() {
 
   const updateTaskLabel = (id: number, label: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, label } : t));
-    sendMessage({ id, type: "task", task: label, command: "update" });
+    sendMessage({ id, type: "task", task: label, command: "edit" });
   };
 
   // ── Drag-reorder tasks ──
@@ -574,7 +567,7 @@ export default function App() {
   setEvents(prev => {
     const card = prev.find(e => e.id === id);
     if (card?.alerting) {
-      sendMessage({ id, type: "event", command: "stop ring", task: card.label });
+      sendMessage({ id, type: "event", command: "stop_ring", task: card.label });
     }
     return prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e);
   });
@@ -584,7 +577,7 @@ export default function App() {
   setDurations(prev => {
     const card = prev.find(d => d.id === id);
     if (card?.alerting) {
-      sendMessage({ id, type: "duration", command: "stop ring" });
+      sendMessage({ id, type: "duration", command: "stop_ring" });
     }
     return prev.map(d => d.id === id ? { ...d, alerting: false } : d);
   });
