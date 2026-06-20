@@ -3,3 +3,4 @@ env/
 guidelines/
 imports/
 __pycache__/
+productivity.db

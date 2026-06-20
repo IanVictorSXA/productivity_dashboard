@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import bisect
-import database
+from database import Database
 
 total_time_format = "%H:%M:%S"
 time_format = "%I:%M:%S %p" # datetime.strptime("12:00:00 PM", time_format)
@@ -19,87 +19,135 @@ parse_time = lambda time_string: datetime.combine(
 parse_datetime = lambda datetime_string: datetime.strptime(datetime_string, datetime_format)
 parse_iso_datetime = lambda iso_string: datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
 
-class Message(BaseModel):
+class Message(BaseModel): 
     id: int | None = None
-    command: str
-    task: str | None = None # label
+    command: str | None = "create"
+    label: str | None = None # label
     type: str | None = None # event, duration, or task
     type_duration: str | None = None # timer or stopwatch
     total_time: str | None = None # total time for the timer
     current_time: str | None = None # current clock time
     remaining_time: str | None = None
+    total_elapsed: str | None = None
     elapsed: str | None = None
     ring_time: str | None = None # time the event should ring
     completed: bool | None = None # is type task object completed?
+    paused: bool = True # is type task object completed?
     pos: int = 0 # position of task
 
 class Task:
-    def __init__(self, id : int, label : str, taskType : str = "task", completed : bool = False, pos : int = 0,):
-        self.id = id
-        self.type = taskType
-        self.label = label
-        self.completed = completed
-        self.pos = pos
+    def __init__(self, msg : Message):
+        self.id = msg.id
+        self.type = msg.type
+        self.label = msg.label
+        self.completed = msg.completed
+        self.pos = msg.pos
+
         self.deleted = False
         self.alerting = False
+        
 
-    def save(self):
-        pass
+    def get_tuple_to_save(self):
+        return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos) VALUES(?, ?, ?, ?, ?)", \
+                (self.id, self.label, self.completed, self.deleted, self.pos)
 
-    def delete(self, msg : Message):
+    def delete(self, msg : Message = None):
         self.deleted = True
 
+        return "UPDATE tasks SET deleted = 1 WHERE id = ?", \
+                (self.id)
+
     def complete(self, msg : Message):
-        self.completed = True
+        self.completed = not self.completed
+
+        return "UPDATE tasks SET completed = ? WHERE id = ?", \
+                (self.completed, self.id) 
 
     def edit(self, msg : Message):
-        self.label = msg.task
+        self.label = msg.label
+
+        return "UPDATE tasks SET label = ? WHERE id = ?", \
+                (self.label, self.id)
 
     def get_ApiTask(self):
-        task = dict(id=self.id, label=self.label, completed=self.completed)
+        task = dict(id=self.id, label=self.label, completed=self.completed) 
         return task
 
     def __str__(self):
         return self.label + " id: "  + str(self.id)
 
 class Event(Task):
-    def __init__(self, id : int, label : str, ringTime : datetime, pos : int = 0):
-        super().__init__(id=id, taskType=label, label="event", pos=pos)
-        self.ringTime = ringTime
+    def __init__(self, msg : Message):
+        super().__init__(msg)
+        self.ring_time = parse_iso_datetime(msg.ring_time)
+
+
+    def get_tuple_to_save(self):
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, deleted, pos) VALUES(?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.deleted, self.pos)
 
     def edit(self, msg : Message):
-        super().edit(msg)
-        self.ringTime = parse_iso_datetime(msg.ring_time)
+        self.label = msg.label
+        self.ring_time = parse_iso_datetime(msg.ring_time)
+        
+        return "UPDATE events SET label = ?, ring_time = ? WHERE id = ?", \
+                (self.label, msg.ring_time, self.id)
 
     def get_ApiEvent(self):
-        return self.get_ApiTask() | dict(ring_time=str(self.ringTime))
+        return self.get_ApiTask() | dict(ring_time=str(self.ring_time))
 
 class Duration(Task):
-    def __init__(self, id: int, typeDuration: str, label: str, currentTime : datetime, pos : int = 0):
-        super().__init__(id=id, taskType="duration", label=label, pos=pos)
-        self.typeDuration = typeDuration
-        self.currentTime = currentTime
-        self.elapsed = zero_timedelta
-        self.paused = True
-        # TODO save creation to SQL
+    def __init__(self, msg):
+        super().__init__(msg)
+        self.type_duration = msg.type_duration
+        self.current_time = parse_time(msg.current_time)
+        self.elapsed : timedelta = parse_total_timedelta(msg.elapsed) if msg.elapsed is not None else zero_timedelta
+        self.paused = msg.paused
+
+    def get_tuple_to_save(self):
+        return "INSERT OR IGNORE INTO stopwatches (id, label, current_time, elapsed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.current_time.strftime(time_format),
+             self.get_elapsed_str(self.elapsed), self.paused, self.deleted, self.pos)
+    
+    def get_elapsed_str(self, elapsed : timedelta):
+        total_seconds = int(elapsed.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        hhmmss = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+        return hhmmss
+
+    def edit(self, msg : Message):
+        self.label = msg.label
+
+        return "UPDATE stopwatches SET label = ? WHERE id = ?", \
+                (self.label, self.id)
 
     def pause(self, msg : Message):
         self.paused = True
         self.elapsed = parse_total_timedelta(msg.elapsed)
-        # TODO save elapsed and paused to sql
+        
+        return "UPDATE stopwatches SET paused = 1, elapsed = ? WHERE id = ?", \
+                (msg.elapsed, self.id)
 
     def resume(self, msg: Message):
         self.paused = False
-        self.currentTime = parse_time(msg.current_time)
-        # TODO save current and paused to sql
+        self.current_time = parse_time(msg.current_time)
+        
+        return "UPDATE stopwatches SET paused = 0, current_time = ? WHERE id = ?", \
+                (msg.current_time, self.id)
 
     def delete(self, msg: Message):
-        super().delete(msg)
+        self.deleted = True
         self.elapsed = parse_total_timedelta(msg.elapsed)
+
+        return "UPDATE stopwatches SET deleted = 1, elapsed = ? WHERE id = ?", \
+                (msg.elapsed, self.id)
 
     def get_ApiDuration(self):
         elapsed_ms = self.elapsed.total_seconds() * 1000
-        started_at = self.currentTime.timestamp() * 1000 if not self.paused else None
+        started_at = self.current_time.timestamp() * 1000 if not self.paused else None
         print(started_at)
         stopwatch = dict(id=self.id, label=self.label, subtype="stopwatch",
                          total_ms=0, accumulated_ms=elapsed_ms, started_at=started_at,
@@ -107,25 +155,41 @@ class Duration(Task):
         return stopwatch
 
 class Timer(Duration):
-    def __init__(self, id: int, typeDuration: str, label: str, currentTime : datetime, totalTime : timedelta, pos : int = 0):
-        super().__init__(id=id, typeDuration="timer", label=label, currentTime=currentTime, pos=pos)
-        self.typeDuration = typeDuration
-        self.currentTime = currentTime
-        self.totalTime = totalTime
-        self.totalElapsed = zero_timedelta # Total time elapsed accross all edits, self.elapsed is time elapsed without for current time card (no edits)
-        self.remaining_time = totalTime
+    def __init__(self, msg : Message):
+        super().__init__(msg)
+        self.total_time = parse_total_timedelta(msg.total_time)
+        # Total time elapsed accross all edits, self.elapsed is time elapsed without for current time card (no edits)
+        self.total_elapsed = parse_total_timedelta(msg.total_elapsed) if msg.total_elapsed is not None else zero_timedelta 
+        self.remaining_time = parse_total_timedelta(msg.remaining_time) if msg.remaining_time is not None else self.total_time
+        
+    def get_tuple_to_save(self):
+        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, completed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.current_time.strftime(time_format), self.get_elapsed_str(self.total_time),
+             self.get_elapsed_str(self.remaining_time), self.get_elapsed_str(self.elapsed),
+             self.get_elapsed_str(self.total_elapsed), self.completed, self.paused,
+             self.deleted, self.pos)
 
     def pause(self, msg: Message):
         self.paused = True
         self.set_elapsed_remaining(msg)
 
+        return "UPDATE timers SET paused = 1, remaining_time = ?, elapsed = ? WHERE id = ?", \
+                (msg.remaining_time, msg.elapsed, self.id)
+
     def resume(self, msg: Message):
         self.paused = False
-        self.currentTime = parse_time(msg.current_time)
+        self.current_time = parse_time(msg.current_time)
+
+        return "UPDATE timers SET paused = 0, current_time = ? WHERE id = ?", \
+                (msg.current_time, self.id)
 
     def delete(self, msg: Message):
-        super().delete(msg)
-        self.totalElapsed += self.elapsed
+        self.deleted = True
+        self.elapsed = parse_total_timedelta(msg.elapsed)
+        self.total_elapsed += self.elapsed
+
+        return "UPDATE timers SET deleted = 1, total_elapsed = ?, elapsed = ? WHERE id = ?", \
+                (self.get_elapsed_str(self.total_elapsed), msg.elapsed, self.id)
 
     def set_elapsed_remaining(self, msg: Message):
         self.remaining_time = parse_total_timedelta(msg.remaining_time)
@@ -134,35 +198,47 @@ class Timer(Duration):
         # print(self.elapsed)
 
     def edit(self, msg : Message):
-        super().edit(msg) # takes care of label
-        self.totalElapsed += self.elapsed
+        self.label = msg.label
+        self.total_elapsed += self.elapsed
         self.elapsed = zero_timedelta
         
-        self.currentTime = parse_time(msg.current_time)
+        self.current_time = parse_time(msg.current_time)
 
-        self.totalTime = parse_total_timedelta(msg.total_time)
-        self.remaining_time = self.totalTime
+        self.total_time = parse_total_timedelta(msg.total_time)
+        self.remaining_time = self.total_time
+
+        return "UPDATE timers SET label = ?, total_elapsed = ?, elapsed = ?, \
+             current_time = ?, total_time = ?, remaining_time = ? WHERE id = ?", \
+        (self.label, self.get_elapsed_str(self.self.total_elapsed), 
+         self.get_elapsed_str(self.elapsed), msg.current_time, msg.total_time, msg.total_time,
+         self.id)
 
     def complete(self, msg : Message):
-        super().complete()
+        self.completed = not self.completed
+
         self.elapsed = parse_total_timedelta(msg.elapsed)
-        self.totalElapsed += self.elapsed
+        self.total_elapsed += self.elapsed
+    
+        return "UPDATE timers SET completed = ?, total_elapsed = ?, elapsed = ? WHERE id = ?", \
+                (self.completed, self.get_elapsed_str(self.total_elapsed), msg.elapsed, self.id)
 
     def get_ApiDuration(self):
         elapsed_ms = self.elapsed.total_seconds() * 1000
-        started_at = self.currentTime.timestamp() * 1000 if not self.paused else None
-        total_ms = self.totalTime.total_seconds() * 1000
-        stopwatch = dict(id=self.id, label=self.label, subtype="timer",
+        started_at = self.current_time.timestamp() * 1000 if not self.paused else None
+        total_ms = self.total_time.total_seconds() * 1000
+        timer = dict(id=self.id, label=self.label, subtype="timer",
                          total_ms=total_ms, accumulated_ms=elapsed_ms, started_at=started_at,
                          alerting=self.alerting)
-        return stopwatch
+        return timer
 
 class TaskManager:
     def __init__(self):
         self.tasks : list[Task] = []
         self.events : list[Event] = []
         self.durations : list[Duration] = []
-
+        
+        self.db = Database()
+        self.retrieve_data()
     # id: int | None = None
     # command: str
     # task: str | None = None # label
@@ -174,21 +250,29 @@ class TaskManager:
     # ring_time: str | None = None # time the event should ring
     # completed: bool | None = None # is type task object completed?
     def process_command(self, msg : Message):
-        print(msg)
+        # print(msg)
+        command, arguments = "", ()
+
         match msg.command:
             case "create":
-                self.create(msg)
+                print(msg)
+                command, arguments = self.create(msg)
             case "delete":
-                self.delete(msg)
+                command, arguments = self.delete(msg)
             case "pause":
-                self.pause(msg)
+                command, arguments = self.pause(msg)
             case "resume":
-                self.resume(msg)
+                command, arguments = self.resume(msg)
             case "edit":
-                self.edit(msg)
+                command, arguments = self.edit(msg)
+            case "complete":
+                command, arguments = self.complete(msg)
             case _:
-                pass
-    
+                raise NotImplementedError(f"command {msg.command} not implemented")
+        
+        if command != "":
+            self.db.execute(command, arguments)
+
     def get_ApiState(self):
         events = []
         durations = []
@@ -204,45 +288,67 @@ class TaskManager:
             tasks.append(task.get_ApiTask())
 
         return dict(
+            last_id = self.db.last_id,
             events=events,
             durations=durations,
             tasks=tasks
         )
 
+    def retrieve_data(self):
+        last_id, data = self.db.retrieveAll()
+
+        for card in data:
+            print("Card: ", card)
+            msg = Message.model_validate(card)
+            print(msg)
+            self.create(msg)
+
+
     def create(self, msg : Message):
+        
         match msg.type:
             case "task":
-                task = Task(msg.id, msg.task)
+                task = Task(msg)
                 self.tasks.append(task)
 
+                return task.get_tuple_to_save()
+
             case "event":
-                event = Event(msg.id, msg.task, parse_iso_datetime(msg.ring_time))
+                event = Event(msg)
                 self.events.append(event)
 
+                return event.get_tuple_to_save()
+            
             case "duration":
                 match msg.type_duration:
                     case "stopwatch":
-                        stopwatch = Duration(msg.id, msg.type_duration, msg.task, parse_time(msg.current_time))
+                        stopwatch = Duration(msg)
                         self.durations.append(stopwatch)
+
+                        return stopwatch.get_tuple_to_save()
+                    
                     case "timer":
-                        timer = Timer(msg.id, msg.type_duration, msg.task, parse_time(msg.current_time), parse_total_timedelta(msg.total_time), msg.pos)
+                        timer = Timer(msg)
                         self.durations.append(timer)
+
+                        return timer.get_tuple_to_save() 
+
                     case _:
                         raise TypeError("msg.type = duration and Invalid msg.type_duration")
             case _:
-                raise TypeError("Invalid msg.type")
+                raise TypeError(f"Invalid msg.type: {msg.type}")
 
     def pause(self, msg : Message):
         index = sorted_find_index(self.durations, msg.id)
         if index != -1:
-            self.durations[index].pause(msg)
+            return self.durations[index].pause(msg)
         else:
             print("Card not in array")
 
     def resume(self, msg : Message):
         index = sorted_find_index(self.durations, msg.id)
         if index != -1:
-            self.durations[index].resume(msg)
+            return self.durations[index].resume(msg)
         else:
             print("Card not in array")
 
@@ -250,39 +356,39 @@ class TaskManager:
         index = sorted_find_index(sorted_ids, msg.id)
 
         if index != -1:
-            sorted_ids[index].delete(msg)
+            card = sorted_ids[index]
+            del sorted_ids[index]
+            return card.delete(msg)
         else:
             print("Card not in array")
-
-        del sorted_ids[index]
 
     def delete(self, msg : Message):
         match msg.type:
             case "task":
-                self.delete_helper(self.tasks, msg)
-                print("array", "array:", [str(task) for task in self.tasks])
+                return self.delete_helper(self.tasks, msg)
+                # print("array", "array:", [str(task) for task in self.tasks])
             
             case "duration":
-                self.delete_helper(self.durations, msg)
+                return self.delete_helper(self.durations, msg)
 
             case "event":
-                self.delete_helper(self.events, msg)
+                return self.delete_helper(self.events, msg)
     
     def edit_helper(self, sorted_ids : list[Task], msg : Message):
         index = sorted_find_index(sorted_ids, msg.id)
         if index != -1:
-            sorted_ids[index].edit(msg)
+            return sorted_ids[index].edit(msg)
         else:
             print("Card not in array")
 
     def edit(self, msg : Message):
         match msg.type:
             case "task":
-                self.edit_helper(self.tasks, msg)
+                return self.edit_helper(self.tasks, msg)
             case "duration":
-                self.edit_helper(self.durations, msg)
+                return self.edit_helper(self.durations, msg)
             case "event":
-                self.edit_helper(self.events, msg)
+                return self.edit_helper(self.events, msg)
 
     def ring(self, msg : Message):
         pass
@@ -290,18 +396,18 @@ class TaskManager:
     def complete_helper(self, sorted_ids : list[Task], msg : Message):
         index = sorted_find_index(sorted_ids, msg.id)
         if index != -1:
-            sorted_ids[index].complete(msg)
+            return sorted_ids[index].complete(msg)
         else:
             print("Card not in array")
 
     def complete(self, msg : Message):
         match msg.type:
             case "task":
-                self.complete_helper(self.tasks, msg)
+                return self.complete_helper(self.tasks, msg)
             case "duration":
-                self.complete_helper(self.durations, msg)
+                return self.complete_helper(self.durations, msg)
             case "event":
-                self.complete_helper(self.events, msg)
+                return self.complete_helper(self.events, msg)
 
 def sorted_find_index(sorted_arr : list[Task], target_id : int):
     """"Finds the index of a Task object by using an array of tasks sorted by id"""

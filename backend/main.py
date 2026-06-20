@@ -21,5 +21,5 @@ def update_time_card(msg: Message):
     return {"success": True}
 
 @app.get("/api")
-def get_time_cards():
+def get_time_cards(): 
     return tm.get_ApiState()

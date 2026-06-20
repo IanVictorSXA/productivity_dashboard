@@ -1,8 +1,7 @@
 python 3.11.15
+Edit date_id to local timezone see get_local_timezone.py
 
-CODE BREAKS IF BACKEND GET GIVES MORE THAN 999 CARDS
-
-Timezone may bring bugs!
+Database is cleaned at the end of the day
 
 ```bash
 git pull https://github.com/IanVictorSXA/productivity_dashboard.git

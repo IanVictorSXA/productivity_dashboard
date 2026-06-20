@@ -56,7 +56,7 @@ type ApiDuration = {
 };
 type ApiTask  = { id: number; label: string; completed: boolean };
 type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean };
-type ApiState = { events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[] };
+type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[] };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
 type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean };
@@ -221,6 +221,7 @@ export default function App() {
       let loadedTasks:     Task[]         = [];
 
       if (state) {
+        _nextId = state.last_id ?? 1000;
         loadedDurations = (state.durations ?? []).map(d => ({
           id: d.id, label: d.label, subtype: d.subtype,
           totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
@@ -243,7 +244,7 @@ export default function App() {
             totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false,
           };
           toCreate.push(card);
-          sendMessage({ id: card.id, type: "duration", type_duration: "stopwatch", task: name, current_time: nowTimeStr(), command: "create" });
+          sendMessage({ id: card.id, type: "duration", type_duration: "stopwatch", label: name, current_time: nowTimeStr(), command: "create" });
         }
       }
 
@@ -259,7 +260,7 @@ export default function App() {
     const id = setInterval(() => {
       setEvents(prev => prev.map(e => {
         if (!e.alerting && !e.completed && msUntil(e.ringTime) <= 0) {
-          sendMessage({ id: e.id, type: "event", command: "ring", task: e.label });
+          sendMessage({ id: e.id, type: "event", command: "ring", label: e.label });
           return { ...e, alerting: true };
         }
         return e;
@@ -322,7 +323,7 @@ export default function App() {
         // Mutex: starting a mutex stopwatch pauses all other running mutex stopwatches
         if (willRun && MUTEX_LABELS.includes(card.label) && MUTEX_LABELS.includes(d.label) && d.startedAt !== null) {
           const elapsed = getElapsedMs(d, now);
-          sendMessage({ id: d.id, type: "duration", command: "pause" });
+          sendMessage({ id: d.id, type: "duration", elapsed: fmtMs(elapsed), command: "pause" });
           return { ...d, accumulatedMs: elapsed, startedAt: null };
         }
 
@@ -357,7 +358,7 @@ export default function App() {
     const id = genId();
     setTasks(prev => [...prev, { id, label: "New Task", completed: false }]);
     setEditingTask(id);
-    sendMessage({ id, type: "task", task: "New Task", command: "create" });
+    sendMessage({ id, type: "task", label: "New Task", command: "create" });
   };
 
   const toggleTask = (id: number) => {
@@ -376,7 +377,7 @@ export default function App() {
 
   const updateTaskLabel = (id: number, label: string) => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, label } : t));
-    sendMessage({ id, type: "task", task: label, command: "edit" });
+    sendMessage({ id, type: "task", label: label, command: "edit" });
   };
 
   // ── Drag-reorder tasks ──
@@ -481,7 +482,7 @@ export default function App() {
       if (mode === "duration" && subtype === "stopwatch") {
         // Stopwatch edit: ONLY update the label; never touch timing state
         setDurations(prev => prev.map(d => d.id === editId ? { ...d, label: lbl } : d));
-        sendMessage({ id: editId, type: "duration", type_duration: "stopwatch", task: lbl, command: "edit" });
+        sendMessage({ id: editId, type: "duration", type_duration: "stopwatch", label: lbl, command: "edit" });
 
 } else if (mode === "duration" && subtype === "timer") {
   setDurations(prev => {
@@ -496,7 +497,7 @@ export default function App() {
       id: editId,
       type: "duration",
       type_duration: "timer",
-      task: lbl,
+      label: lbl,
       current_time: nowTimeStr(),
       total_time: fmtMs(newTotalMs),
       remaining_time: fmtMs(newRemainingMs),
@@ -521,7 +522,7 @@ export default function App() {
           ringTime = new Date(Date.now() + (ms || 3600000));
         }
         setEvents(prev => prev.map(e => e.id === editId ? { ...e, label: lbl, ringTime, alerting: false, completed: false } : e));
-        sendMessage({ id: editId, type: "event", task: lbl, ring_time: ringTime.toISOString(), command: "edit" });
+        sendMessage({ id: editId, type: "event", label: lbl, ring_time: ringTime.toISOString(), command: "edit" });
       }
 
       setModal(defaultModal());
@@ -534,7 +535,7 @@ export default function App() {
       if (subtype === "stopwatch") {
         const card: DurationCard = { id, label: lbl, subtype: "stopwatch", totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false };
         setDurations(prev => [...prev, card]);
-        sendMessage({ id, type: "duration", type_duration: "stopwatch", task: lbl, current_time: nowTimeStr(), command: "create" });
+        sendMessage({ id, type: "duration", type_duration: "stopwatch", label: lbl, current_time: nowTimeStr(), command: "create" });
       } else {
         let totalMs: number;
         if (timeMode === "ring") {
@@ -545,7 +546,7 @@ export default function App() {
         if (totalMs <= 0) totalMs = 3600000;
         const card: DurationCard = { id, label: lbl, subtype: "timer", totalMs, accumulatedMs: 0, startedAt: null, alerting: false };
         setDurations(prev => [...prev, card]);
-        sendMessage({ id, type: "duration", type_duration: "timer", task: lbl, current_time: nowTimeStr(), total_time: fmtMs(totalMs), command: "create" });
+        sendMessage({ id, type: "duration", type_duration: "timer", label: lbl, current_time: nowTimeStr(), total_time: fmtMs(totalMs), command: "create" });
       }
     } else {
       const id = genId();
@@ -557,7 +558,7 @@ export default function App() {
         ringTime = new Date(Date.now() + (ms || 3600000));
       }
       setEvents(prev => [...prev, { id, label: lbl, ringTime, alerting: false, completed: false }]);
-      sendMessage({ id, type: "event", task: lbl, ring_time: ringTime.toISOString(), command: "create" });
+      sendMessage({ id, type: "event", label: lbl, ring_time: ringTime.toISOString(), command: "create" });
     }
     setModal(defaultModal());
   }, [modal]);
@@ -567,7 +568,7 @@ export default function App() {
   setEvents(prev => {
     const card = prev.find(e => e.id === id);
     if (card?.alerting) {
-      sendMessage({ id, type: "event", command: "stop_ring", task: card.label });
+      sendMessage({ id, type: "event", command: "stop_ring", label: card.label });
     }
     return prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e);
   });
