@@ -55,7 +55,7 @@ class Task:
         self.deleted = True
 
         return "UPDATE tasks SET deleted = 1 WHERE id = ?", \
-                (self.id)
+                (self.id,)
 
     def complete(self, msg : Message):
         self.completed = not self.completed
@@ -267,6 +267,10 @@ class TaskManager:
                 command, arguments = self.edit(msg)
             case "complete":
                 command, arguments = self.complete(msg)
+            case "ring":
+                pass
+            case "stop_ring":
+                pass
             case _:
                 raise NotImplementedError(f"command {msg.command} not implemented")
         
