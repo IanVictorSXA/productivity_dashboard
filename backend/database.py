@@ -98,7 +98,8 @@ class Database:
     def execute(self, command : str, arguments=()):
         print(command, arguments)
         if command.startswith("INSERT"):
-            self.last_id = arguments[0] + 1
+            self.last_id = arguments[0]
+            self.update_textfile()
             # print(arguments)
 
         with sqlite3.connect(self.db_name) as con:
@@ -114,7 +115,7 @@ class Database:
             con.row_factory = dict_factory
             with closing(con.cursor()) as cursor:
                 for table in self.tables:
-                    command = f"SELECT * FROM {table}"
+                    command = f"SELECT * FROM {table} WHERE deleted = 0"
                     cursor.execute(command)
                     rows = cursor.fetchall()
                     data.extend(rows)
