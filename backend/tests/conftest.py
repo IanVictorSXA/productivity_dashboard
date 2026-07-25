@@ -1,3 +1,11 @@
+"""Shared pytest fixtures for the backend test suite.
+
+Provides an isolated filesystem sandbox (`temp_db_env`) so every test gets
+its own `date_id.txt` and SQLite file instead of touching the real
+`productivity.db` / `date_id.txt` used by the running app, plus `test_db` and
+`test_task_manager` built on top of that sandbox.
+"""
+
 import pytest
 import tempfile
 import os

@@ -119,13 +119,17 @@ Numbered groups are the intended implementation order. Each group should be inde
 - `Timer.ring()` and `Duration.ring()` now also set and persist `paused = True`, freezing the running state exactly as a manual pause would.
 - Regression test added to `backend/tests/test_group3.py`: `test_ring_timer_does_not_resume_as_running_after_reload`.
 
-## 6. Code documentation pass
+## 6. Code documentation pass — ✅ COMPLETE
 
-- Add a module-level docstring to every Python file that doesn't already have one: `classes.py`, `database.py`, `main.py`, `get_local_timezone.py`, and anything added under `backend/tests/` in Group 1.
-- Add a docstring to every Python function/method that doesn't already have one — `Message`, `Task`, `Event`, `Duration`, `Timer`, `TaskManager`, `Database`, and the module-level helpers (`sorted_find_index`, the `parse_*` lambdas, etc).
-- Add explanatory comments throughout the backend and touched frontend code (`App.tsx`) wherever intent isn't obvious from names/structure alone — e.g. the mutex stopwatch logic, the state-restore assumptions from Group 5, and the ring/stop_ring persistence added in Group 3.
-- Run this pass after Groups 1–5 land, so the documentation describes the final, fixed behavior instead of needing a rewrite once bugs are fixed.
-- Not a functional change — behavior should be identical before and after this group. If writing a docstring surfaces a new bug, log it rather than fixing it inline here.
+**Status**: Commit pending — all module/class/method docstrings added, 82 tests still passing (no behavior change).
+
+**Deliverables**:
+- ✅ Added module-level docstrings to `classes.py`, `database.py`, `main.py`, `get_local_timezone.py`, `backend/tests/conftest.py`, and `backend/tests/test_fixtures.py` (the only two test files still missing one — the rest already had docstrings from when they were written in Groups 1–5).
+- ✅ Added a docstring to every class and method in `classes.py` (`Message`, `Task`, `Event`, `Duration`, `Timer`, `TaskManager`) and `database.py` (`Database`, `dict_factory`), plus explanatory comments above the module-level `parse_*` lambdas (which can't carry a real docstring) in `classes.py`.
+- ✅ Fixed a cosmetic typo in `sorted_find_index`'s existing docstring (`""""Finds` → `"""Finds`, an errant extra quote character) while touching that docstring.
+- ✅ Reviewed `App.tsx`: it already carries extensive explanatory comments (mutex stopwatch logic, timestamp-based elapsed-time math, pause/resume/edit-modal interruption handling, shutdown-no-longer-deletes-cards); no gaps found worth adding to.
+- ✅ No functional changes — verified via `python -m pytest backend/tests/ -q` (82 passed, same as before this group) and an AST parse check of every touched `.py` file.
+- No new bugs surfaced while writing docstrings.
 
 ## 7. Cleanup and roadmap update
 

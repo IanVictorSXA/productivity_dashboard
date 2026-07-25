@@ -1,3 +1,5 @@
+"""Sanity checks for the `conftest.py` fixtures themselves (temp DB, task manager)."""
+
 import pytest
 from classes import TaskManager, Message
 
