@@ -5,8 +5,14 @@ Numbered groups are the intended implementation order. Each group should be inde
 ## 1. Backend regression harness
 
 - Add `pytest` to `backend/requirements.txt`.
-- Add a `backend/tests/` package with a fixture that builds a `TaskManager`/`Database` against a temp SQLite file and temp `date_id.txt` (never touch the real `productivity.db` or `date_id.txt`), cleaned up after each test.
+- Add a `backend/tests/` package with fixtures that build a `TaskManager`/`Database` against a temp SQLite file and temp `date_id.txt` (never touch the real `productivity.db` or `date_id.txt`), cleaned up after each test.
 - No HTTP/uvicorn layer needed for these tests — call `TaskManager.process_command()` / `Database` methods directly, same as the reproduction scripts used to confirm the bugs below.
+- Comprehensive test coverage for all classes:
+  - **Task**: `create`, `delete`, `edit`, `complete` commands; verify state persists to DB.
+  - **Event**: `create`, `delete`, `edit`, `complete`, `ring`, `stop_ring` commands; verify ring_time parsing and alerting state.
+  - **Duration (Stopwatch)**: `create`, `delete`, `edit`, `pause`, `resume` commands; verify elapsed time tracking and paused state.
+  - **Timer**: `create`, `delete`, `edit`, `pause`, `resume`, `complete`, `ring`, `stop_ring` commands; verify remaining_time, total_elapsed, and alerting state.
+  - Each test should verify both in-memory state and database persistence after each command.
 
 ## 2. Fix confirmed crash bugs (0e)
 

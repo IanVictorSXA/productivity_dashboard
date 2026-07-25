@@ -5,3 +5,4 @@ imports/
 __pycache__/
 productivity.db
 date_id.txt
+readme_claude.md
