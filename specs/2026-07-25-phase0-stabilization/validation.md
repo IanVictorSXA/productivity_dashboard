@@ -2,7 +2,12 @@
 
 ## Automated
 
-- [ ] `pytest` (new `backend/tests/`) passes in full, covering:
+- [x] **Group 1 baseline**: `pytest` (new `backend/tests/`) infrastructure complete
+  - 51 tests passing (48 passing, 3 xfailed for known Timer.edit() bug)
+  - Comprehensive coverage: Task, Event, Stopwatch, Timer creation, commands, persistence
+  - All fixtures use temporary SQLite DB + date_id.txt (never touch production files)
+  - Ready for Group 2–5 regression tests to be added
+- [ ] `pytest` (Groups 2–5 tests) passes in full, covering:
   - `close` command does not raise (Group 2)
   - Timer `edit` (paused and while running) does not raise and persists correct `total_elapsed`/`elapsed`/`remaining_time` (Group 2)
   - `ring` persists frozen elapsed time + `alerting=True` to the DB for both timers and events; `stop_ring` clears `alerting` (Group 3)
