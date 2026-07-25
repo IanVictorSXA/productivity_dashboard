@@ -91,11 +91,33 @@ Numbered groups are the intended implementation order. Each group should be inde
   - `test_stopwatch_with_extended_running_time`: 8-hour accumulation across multiple cycles
 - ✅ All 75 tests pass (67 existing + 8 new for Group 4)
 
-## 5. Confirm startup/shutdown state parity (0d)
+## 5. Confirm startup/shutdown state parity (0d) — ✅ COMPLETE
 
-- Using the fix from Group 2 (`close` no longer crashes), manually and then via test trace the full shutdown sequence in `App.tsx`'s `handleShutdown`: does it intentionally delete all cards (including the persistent Work/Misc/Waste stopwatches) on every shutdown, or is that a bug? Cross-reference against `Database`'s day-rollover `deleteAll()` — decide whether card deletion belongs in the frontend shutdown handler at all, or should only happen via the backend's date-based rollover.
-- Fix whichever side is wrong so that: (a) a same-day restart (e.g. Pi reboot without a date change) restores exactly what was running/paused before, and (b) a next-day boot correctly starts fresh via the existing `date_id.txt` rollover — not via the shutdown handler nuking data early.
-- Add a regression test simulating "shutdown mid-run, reboot same day" and "reboot after a date rollover" and assert the resulting DB/`get_ApiState()` output matches expectations for each.
+**Status**: Commit pending — Bug confirmed and fixed, 4 new regression tests passing (79 total at time of this group).
+
+**Finding**: `App.tsx`'s `handleShutdown` sent a `delete` command for every duration and event card (including the persistent Work/Misc/Waste stopwatches) on every shutdown, then sent `close`. This was a bug, not intentional: it meant a same-day restart (e.g. Pi reboot without a date change) lost all state, while the backend's `Database.__init__` day-rollover `deleteAll()` was the correct, already-working mechanism for clearing state — but only when `date_id.txt`'s stored date differs from today.
+
+**Deliverables**:
+- ✅ Simplified `handleShutdown` (`App.tsx`) to only send `{ command: "close", current_time }` — no more per-card deletes. Card deletion is now solely the responsibility of the backend's date-based rollover.
+- ✅ No backend changes needed — `Database.deleteAll()` already fires correctly on next-day boot via `date_id.txt` comparison.
+- ✅ Created `backend/tests/test_group5.py` with 4 regression tests:
+  - `test_same_day_restart_preserves_all_cards`: Work/Misc stopwatches, a timer, an event, and a task all survive a same-day restart
+  - `test_next_day_boot_clears_all_cards`: date rollover in `date_id.txt` still clears all tables via `deleteAll()`
+  - `test_shutdown_no_longer_deletes_cards`: confirms no delete commands are needed/sent for the DB to retain cards through a close
+  - `test_work_misc_waste_stopwatches_persist_across_restart`: the three mutex stopwatches specifically survive restart with correct elapsed times
+- ✅ All 79 tests pass (67 existing + 4 new for Group 5, at the time this group landed)
+
+**Addendum 1 — related bug found and fixed while validating state parity**: dismissing a ringing *event* (clicking it to silence the alert) didn't survive a page refresh — the event would immediately ring again. Root cause: `Event.get_ApiEvent()` didn't return `alerting` at all (frontend always saw it as falsy), and separately the `events` DB table had no `completed`/dismissed column, so nothing durably recorded that a past-due ring had already been acknowledged — `stop_ring` only cleared `alerting`, which is not enough since `ring_time` never moves back into the future. Fixed by:
+- Adding a `completed` column to the `events` table (the productivity.db `events` table was dropped and recreated with this column already present; no runtime migration needed).
+- `Event.stop_ring()` now persists `completed = True` alongside `alerting = False`.
+- `Event.edit()` now resets `alerting`/`completed` to `False` when the ring time changes, so editing a dismissed/ringing event doesn't leave it stuck.
+- `Event.get_ApiEvent()` correctly reflects `alerting` (via the existing `get_ApiTask()` merge, which already included `completed`).
+- Frontend now loads `completed` from `GET /api` instead of hardcoding it to `false` on boot.
+- Regression tests added to `backend/tests/test_group3.py`: `test_dismissed_event_stays_dismissed_after_reload`, `test_editing_event_clears_stale_alerting_and_completed`.
+
+**Addendum 2 — same class of bug, also affecting timers/stopwatches**: a rung *timer* (and, defensively, stopwatch) also re-rang after refresh, for a related but distinct reason. `Timer.ring()`/`Duration.ring()` set `alerting = True` but never set `paused = True`. `get_ApiDuration()` computes `started_at` as `None if self.paused else current_time` — so a rung-but-not-paused timer reloads reporting `started_at != None`, and the frontend treats it as still actively running with elapsed already past `total_time`, instantly re-firing `ring()`. Fixed by:
+- `Timer.ring()` and `Duration.ring()` now also set and persist `paused = True`, freezing the running state exactly as a manual pause would.
+- Regression test added to `backend/tests/test_group3.py`: `test_ring_timer_does_not_resume_as_running_after_reload`.
 
 ## 6. Code documentation pass
 

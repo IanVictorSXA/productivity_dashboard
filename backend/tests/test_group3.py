@@ -159,6 +159,59 @@ class TestTimerRing:
         assert record["alerting"] == 1
         assert record["elapsed"] == "00:05:01"
 
+    def test_ring_timer_does_not_resume_as_running_after_reload(self, test_task_manager, test_db):
+        """Regression: a rung timer must not appear "running" again after reload.
+
+        Bug: Timer.ring() set alerting=True but never set paused=True. Since
+        get_ApiDuration()'s started_at is computed as `None if paused else
+        current_time`, a rung-but-not-paused timer reloads with started_at
+        != None — the frontend treats it as actively running with elapsed
+        already past total_time, and instantly re-fires ring() again.
+        """
+        msg_create = Message(
+            id=1,
+            command="create",
+            label="Test timer",
+            type="duration",
+            type_duration="timer",
+            current_time="02:30:00 PM",
+            total_time="00:00:02",
+            remaining_time="00:00:00",
+            elapsed="00:00:02",
+            total_elapsed="00:00:00",
+            completed=False,
+            paused=False,  # was actively running right up to the moment it rang
+            pos=0
+        )
+        test_task_manager.process_command(msg_create)
+        timer = test_task_manager.durations[0]
+        assert timer.paused is False
+
+        msg_ring = Message(id=1, command="ring", type="duration", elapsed="00:00:02")
+        test_task_manager.process_command(msg_ring)
+
+        # ring() must freeze the running state
+        assert timer.paused is True
+        assert timer.get_ApiDuration()["started_at"] is None
+
+        # Verify persisted to DB
+        _, data = test_db.retrieveAll()
+        record = next(d for d in data if d.get("type_duration") == "timer")
+        assert record["paused"] == 1
+
+        # Simulate a fresh TaskManager loading from DB (page refresh / restart)
+        from classes import TaskManager
+        reloaded_tm = TaskManager.__new__(TaskManager)
+        reloaded_tm.tasks = []
+        reloaded_tm.events = []
+        reloaded_tm.durations = []
+        reloaded_tm.db = test_db
+        reloaded_tm.retrieve_data()
+
+        reloaded_timer = reloaded_tm.durations[0]
+        assert reloaded_timer.paused is True
+        assert reloaded_timer.get_ApiDuration()["started_at"] is None
+
 
 class TestEventRing:
     """Test event ring handling."""
@@ -245,6 +298,102 @@ class TestEventRing:
         record = event_records[0]
 
         assert record["alerting"] == 0
+
+    def test_dismissed_event_stays_dismissed_after_reload(self, test_task_manager, test_db):
+        """Regression: dismissing a ringing event must survive a page refresh.
+
+        Root cause: the `events` table had no `completed` column, so nothing
+        durably recorded that a ringing event had been dismissed. Since the
+        event's ring_time stays in the past forever, `alerting=False` alone
+        is not enough — on reload the frontend's countdown-check effect sees
+        msUntil(ring_time) <= 0 and immediately re-fires ring(). Dismissing
+        must also persist completed=True (mirroring what the frontend already
+        does in memory via dismissEvent), and get_ApiEvent() must expose it.
+        """
+        msg_create = Message(
+            id=2,
+            command="create",
+            label="Test event",
+            type="event",
+            ring_time="2026-07-25T15:30:00Z",  # in the past relative to "today" in these tests
+            completed=False,
+            pos=0
+        )
+        test_task_manager.process_command(msg_create)
+
+        msg_ring = Message(id=2, command="ring", type="event", label="Test event")
+        test_task_manager.process_command(msg_ring)
+
+        api_event = test_task_manager.events[0].get_ApiEvent()
+        assert api_event["alerting"] is True
+        assert api_event["completed"] is False
+
+        msg_stop_ring = Message(id=2, command="stop_ring", type="event", label="Test event")
+        test_task_manager.process_command(msg_stop_ring)
+
+        api_event = test_task_manager.events[0].get_ApiEvent()
+        assert api_event["alerting"] is False
+        assert api_event["completed"] is True
+
+        # Verify persistence to DB directly
+        _, data = test_db.retrieveAll()
+        event_record = next(d for d in data if d.get("type") == "event")
+        assert event_record["alerting"] == 0
+        assert event_record["completed"] == 1
+
+        # Simulate a fresh TaskManager loading from DB (page refresh / restart)
+        from classes import TaskManager
+        reloaded_tm = TaskManager.__new__(TaskManager)
+        reloaded_tm.tasks = []
+        reloaded_tm.events = []
+        reloaded_tm.durations = []
+        reloaded_tm.db = test_db
+        reloaded_tm.retrieve_data()
+
+        reloaded_event = reloaded_tm.events[0]
+        assert reloaded_event.alerting is False
+        assert reloaded_event.completed is True
+        reloaded_api_event = reloaded_event.get_ApiEvent()
+        assert reloaded_api_event["alerting"] is False
+        assert reloaded_api_event["completed"] is True
+
+    def test_editing_event_clears_stale_alerting_and_completed(self, test_task_manager, test_db):
+        """Editing a ringing/dismissed event's ring_time should silence it going forward."""
+        msg_create = Message(
+            id=3,
+            command="create",
+            label="Test event",
+            type="event",
+            ring_time="2026-07-25T15:30:00Z",
+            completed=False,
+            pos=0
+        )
+        test_task_manager.process_command(msg_create)
+
+        test_task_manager.process_command(Message(id=3, command="ring", type="event", label="Test event"))
+        test_task_manager.process_command(Message(id=3, command="stop_ring", type="event", label="Test event"))
+
+        event = test_task_manager.events[0]
+        assert event.alerting is False
+        assert event.completed is True
+
+        # Edit pushes the ring time into the future — should reset alerting/completed
+        msg_edit = Message(
+            id=3,
+            command="edit",
+            type="event",
+            label="Test event",
+            ring_time="2026-07-26T09:00:00Z",
+        )
+        test_task_manager.process_command(msg_edit)
+
+        assert event.alerting is False
+        assert event.completed is False
+
+        _, data = test_db.retrieveAll()
+        event_record = next(d for d in data if d.get("type") == "event")
+        assert event_record["alerting"] == 0
+        assert event_record["completed"] == 0
 
 
 class TestStopwatchRing:

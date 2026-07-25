@@ -24,6 +24,7 @@ class Database:
                             label TEXT NOT NULL,
                             ring_time TEXT NOT NULL,
                             alerting BOOLEAN DEFAULT 0,
+                            completed BOOLEAN DEFAULT 0,
                             deleted BOOLEAN,
                             pos INTEGER)""")
                 

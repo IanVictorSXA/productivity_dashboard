@@ -88,17 +88,22 @@ class Event(Task):
     def __init__(self, msg : Message):
         super().__init__(msg)
         self.ring_time = parse_iso_datetime(msg.ring_time)
+        # Message.completed defaults to None; normalize so it stores/compares as a real bool
+        self.completed = bool(self.completed)
 
 
     def get_tuple_to_save(self):
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, deleted, pos) VALUES(?, ?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos)
 
     def edit(self, msg : Message):
         self.label = msg.label
         self.ring_time = parse_iso_datetime(msg.ring_time)
+        # Editing the ring time supersedes any past ring/dismissal — start fresh
+        self.alerting = False
+        self.completed = False
 
-        return "UPDATE events SET label = ?, ring_time = ? WHERE id = ?", \
+        return "UPDATE events SET label = ?, ring_time = ?, alerting = 0, completed = 0 WHERE id = ?", \
                 (self.label, msg.ring_time, self.id)
 
     def ring(self, msg: Message):
@@ -106,11 +111,15 @@ class Event(Task):
         return "UPDATE events SET alerting = 1 WHERE id = ?", (self.id,)
 
     def stop_ring(self, msg: Message):
+        # Dismissing a ringing event is the only way an event gets "completed" today —
+        # without persisting this, a page refresh re-evaluates msUntil(ring_time) <= 0
+        # and immediately re-rings, since ring_time never moves back into the future.
         self.alerting = False
-        return "UPDATE events SET alerting = 0 WHERE id = ?", (self.id,)
+        self.completed = True
+        return "UPDATE events SET alerting = 0, completed = 1 WHERE id = ?", (self.id,)
 
     def get_ApiEvent(self):
-        return self.get_ApiTask() | dict(ring_time=str(self.ring_time))
+        return self.get_ApiTask() | dict(ring_time=str(self.ring_time), alerting=self.alerting)
 
 class Duration(Task):
     def __init__(self, msg):
@@ -163,8 +172,11 @@ class Duration(Task):
 
     def ring(self, msg: Message):
         self.alerting = True
+        # Mirrors Timer.ring(): freeze the running state so get_ApiDuration()
+        # reports started_at = None on reload instead of "still running".
+        self.paused = True
         self.elapsed = parse_total_timedelta(msg.elapsed) if msg.elapsed else self.elapsed
-        return "UPDATE stopwatches SET alerting = 1, elapsed = ? WHERE id = ?", \
+        return "UPDATE stopwatches SET alerting = 1, paused = 1, elapsed = ? WHERE id = ?", \
                 (self.get_elapsed_str(self.elapsed), self.id)
 
     def stop_ring(self, msg: Message):
@@ -250,8 +262,13 @@ class Timer(Duration):
 
     def ring(self, msg: Message):
         self.alerting = True
+        # A ringing timer has finished counting down and is no longer running —
+        # without this, get_ApiDuration() keeps reporting started_at != None,
+        # so a page refresh reloads it as still running with elapsed already
+        # past total_time, which instantly re-fires ring().
+        self.paused = True
         self.elapsed = parse_total_timedelta(msg.elapsed) if msg.elapsed else self.elapsed
-        return "UPDATE timers SET alerting = 1, elapsed = ? WHERE id = ?", \
+        return "UPDATE timers SET alerting = 1, paused = 1, elapsed = ? WHERE id = ?", \
                 (self.get_elapsed_str(self.elapsed), self.id)
 
     def stop_ring(self, msg: Message):
