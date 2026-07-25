@@ -78,19 +78,29 @@ class Database:
             self.text.extend([date.strftime(date_str_format) + "\n", "" ])
             self.update_textfile()
 
-        elif len(self.text) == 3: 
-            date = datetime.strptime(self.text[1].strip(), date_str_format).date()
-            today = datetime.now(tz=tz).date()
-            # print(date, today, "date is not today? ", date != today)
-            if date != today:
-                self.deleteAll()
+        elif len(self.text) == 3:
+            try:
+                date = datetime.strptime(self.text[1].strip(), date_str_format).date()
+                today = datetime.now(tz=tz).date()
+                # print(date, today, "date is not today? ", date != today)
+                if date != today:
+                    self.deleteAll()
+                    self.text[1] = today.strftime(date_str_format) + "\n"
+                    # print("new_text: ", self.text)
+                    self.update_textfile()
+                else:
+                    self.last_id = int(self.text[2].strip())
+            except (ValueError, IndexError):
+                print("date_id.txt is corrupted, reinitializing")
+                today = datetime.now(tz=tz).date()
                 self.text[1] = today.strftime(date_str_format) + "\n"
-                # print("new_text: ", self.text)
+                self.text[2] = "-1\n"
                 self.update_textfile()
-            else:
-                self.last_id = int(self.text[2].strip())
         else:
-            print("text file does not have correct format")
+            print("text file does not have correct format, reinitializing")
+            today = datetime.now(tz=tz).date()
+            self.text = [self.text[0], today.strftime(date_str_format) + "\n", "-1\n"]
+            self.update_textfile()
         # print("last_id is ", self.last_id)
 
     def update_textfile(self):
