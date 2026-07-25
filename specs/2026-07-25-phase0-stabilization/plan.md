@@ -52,3 +52,10 @@ Numbered groups are the intended implementation order. Each group should be inde
 - Remove stray debug `print()` statements introduced/found in `classes.py` and `database.py` (e.g. `classes.py:151`) where safe to do so without losing useful signal — keep anything genuinely useful behind a clearer form if wanted, but don't leave unexplained prints.
 - Run the full pytest suite + the manual walkthrough in `validation.md`.
 - Check off Phase 0 items in `specs/roadmap.md` (0a–0e) once `validation.md` passes.
+
+## 8. Fill out README.md
+
+- Rewrite `README.md` into an actual project README: a short mission/feature summary (source: `specs/mission.md`), setup/run instructions for both services (`docker compose up`, plus the manual `pip install -r backend/requirements.txt` + `uvicorn` / `pnpm install` + `pnpm dev` paths per `specs/tech-stack.md`), and current tech stack — today it's just a raw dump of API message examples with no project overview or setup steps.
+- Keep and correct the existing API-message reference section rather than dropping it — it's genuinely useful — but fix the parts that are already stale (e.g. example payloads use a `"task"` field; the actual `Message` model field is `"label"`), and add the `close` command plus the now-real `ring`/`stop_ring` payloads/behavior once Groups 2–3 land.
+- Reconcile with `readme_claude.md`, which has more complete prose (feature list, planned voice architecture, hardware section) but references a stale Phase 1–4 roadmap numbering that no longer matches `specs/roadmap.md`'s current phases (0–6). Fold anything still accurate into `README.md` and delete `readme_claude.md` — one README, not two drifting copies.
+- Do this last, once Groups 1–7 are done, so the documented setup steps and API examples describe the actually-fixed, actually-tested behavior rather than needing another rewrite.

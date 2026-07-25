@@ -21,6 +21,7 @@ All of Phase 0 (0a–0e) in this one branch/spec — decided over splitting into
 - **Regression checks**: introduce `pytest` for the backend (currently no test framework anywhere in the repo). Add it to `backend/requirements.txt`. Tests exercise `TaskManager.process_command` and `Database` directly (no HTTP layer needed — `main.py` is a thin FastAPI wrapper). Frontend gets no new test tooling in this phase; audit findings there are covered by the manual walkthrough in `validation.md`.
 - **Known-bug-driven, not blind audit**: the user reported "Python throws an error when a timer/stopwatch card or event rings." Investigation (see below) found the ring/stop_ring handlers are actually no-ops and can't throw — the real crashes live in two adjacent paths a user hits in the same session. Both are treated as confirmed, in-scope bugs, not hypothetical edge cases.
 - No new features. Exercise/Shower stopwatches, Sheets sync, analytics, and voice are explicitly Phase 2+ and out of scope here.
+- **README consolidation**: `README.md` is currently just a raw API-message dump (with stale examples, e.g. a `"task"` field that doesn't match the actual `Message.label` field) and `readme_claude.md` is a separate, more complete but roadmap-stale draft. Both get folded into one corrected `README.md`; `readme_claude.md` is deleted. See `plan.md` Group 8.
 
 ## Confirmed findings (reproduced directly against `backend/classes.py`)
 

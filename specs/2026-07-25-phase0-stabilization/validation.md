@@ -34,3 +34,4 @@
 - [ ] Decisions made in Plan Group 5 (what shutdown should actually delete, if anything) are written back into `requirements.md` or `plan.md` as the final decision, so the roadmap reflects intent, not just the fix.
 - [ ] Every Python file in `backend/` has a module-level docstring, and every function/method has a docstring, per Plan Group 6.
 - [ ] `specs/roadmap.md` Phase 0 items (0a–0e) are checked off.
+- [ ] `README.md` has a real project overview + setup instructions, its API examples are corrected (no stale `"task"` field, `close`/`ring`/`stop_ring` documented), and `readme_claude.md` is folded in and removed per Plan Group 8.
