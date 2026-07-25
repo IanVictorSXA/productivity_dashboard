@@ -207,7 +207,6 @@ class TestTimerCommands:
         # total_elapsed should accumulate
         assert timer.total_elapsed == timedelta(minutes=10)
 
-    @pytest.mark.xfail(reason="Timer.edit() has typo: self.self.total_elapsed (bug to fix in task 2)")
     def test_edit_timer_label(self, test_task_manager):
         """Test editing a timer label."""
         msg_create = Message(
@@ -242,7 +241,6 @@ class TestTimerCommands:
         # After edit, total_time should be updated and remaining_time reset
         assert timer.total_time == timedelta(minutes=15)
 
-    @pytest.mark.xfail(reason="Timer.edit() has typo: self.self.total_elapsed (bug to fix in task 2)")
     def test_edit_timer_duration(self, test_task_manager):
         """Test editing a timer's duration."""
         msg_create = Message(
@@ -434,7 +432,6 @@ class TestTimerDatabasePersistence:
         timer_records = [d for d in data if d.get("type_duration") == "timer"]
         assert timer_records[0]["total_elapsed"] == "00:08:00"
 
-    @pytest.mark.xfail(reason="Timer.edit() has typo: self.self.total_elapsed (bug to fix in task 2)")
     def test_edited_timer_persists(self, test_task_manager, test_db):
         """Test that timer edits persist to database."""
         msg_create = Message(

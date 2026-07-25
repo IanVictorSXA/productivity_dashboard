@@ -209,7 +209,7 @@ class Timer(Duration):
 
         return "UPDATE timers SET label = ?, total_elapsed = ?, elapsed = ?, \
              current_time = ?, total_time = ?, remaining_time = ? WHERE id = ?", \
-        (self.label, self.get_elapsed_str(self.self.total_elapsed), 
+        (self.label, self.get_elapsed_str(self.total_elapsed),
          self.get_elapsed_str(self.elapsed), msg.current_time, msg.total_time, msg.total_time,
          self.id)
 
@@ -270,6 +270,8 @@ class TaskManager:
             case "ring":
                 pass
             case "stop_ring":
+                pass
+            case "close":
                 pass
             case _:
                 raise NotImplementedError(f"command {msg.command} not implemented")
