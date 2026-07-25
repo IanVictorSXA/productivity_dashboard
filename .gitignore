@@ -6,3 +6,8 @@ __pycache__/
 productivity.db
 date_id.txt
 readme_claude.md
+AGENTS.md
+CLAUDE.md
+.claudeignore
+.claude/
+.pytest_cache/
