@@ -345,6 +345,10 @@ class TaskManager:
             print(msg)
             self.create(msg)
 
+        self.tasks.sort(key=lambda x: x.id)
+        self.events.sort(key=lambda x: x.id)
+        self.durations.sort(key=lambda x: x.id)
+
 
     def create(self, msg : Message):
         
@@ -386,6 +390,7 @@ class TaskManager:
             return self.durations[index].pause(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def resume(self, msg : Message):
         index = sorted_find_index(self.durations, msg.id)
@@ -393,6 +398,7 @@ class TaskManager:
             return self.durations[index].resume(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def delete_helper(self, sorted_ids : list[Task], msg : Message):
         index = sorted_find_index(sorted_ids, msg.id)
@@ -403,6 +409,7 @@ class TaskManager:
             return card.delete(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def delete(self, msg : Message):
         match msg.type:
@@ -422,6 +429,7 @@ class TaskManager:
             return sorted_ids[index].edit(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def edit(self, msg : Message):
         match msg.type:
@@ -438,6 +446,7 @@ class TaskManager:
             return sorted_ids[index].ring(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def ring(self, msg : Message):
         match msg.type:
@@ -454,6 +463,7 @@ class TaskManager:
             return sorted_ids[index].stop_ring(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def stop_ring(self, msg : Message):
         match msg.type:
@@ -470,6 +480,7 @@ class TaskManager:
             return sorted_ids[index].complete(msg)
         else:
             print("Card not in array")
+            return "", ()
 
     def complete(self, msg : Message):
         match msg.type:
