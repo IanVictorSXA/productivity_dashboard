@@ -41,5 +41,5 @@
 
 - **Whisper** for speech-to-text
 - A wake-word detection engine (TBD which one — evaluate options for accuracy/CPU cost on Pi 5 when Phase 3 starts)
-- A **local LLM**, running on the AI HAT+2, for natural-language intent detection and the eventual conversational assistant
+- **hailo-ollama** to serve the local LLM on the AI HAT+2 (Ollama-compatible API backed by the Hailo NPU), for natural-language intent detection and the eventual conversational assistant
 - Predefined/rule-based commands come first (Phase 3); natural-language understanding via the local LLM comes later (Phase 4) — don't reach for the LLM before the simple command path is solid.
