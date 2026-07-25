@@ -19,10 +19,11 @@ class Database:
         with sqlite3.connect(self.db_name) as con:
             with closing(con.cursor()) as cursor:
                 cursor.execute("""CREATE TABLE IF NOT EXISTS events(
-                            id INTEGER UNIQUE, 
+                            id INTEGER UNIQUE,
                             type TEXT DEFAULT event,
                             label TEXT NOT NULL,
-                            ring_time TEXT NOT NULL, 
+                            ring_time TEXT NOT NULL,
+                            alerting BOOLEAN DEFAULT 0,
                             deleted BOOLEAN,
                             pos INTEGER)""")
                 
@@ -35,18 +36,19 @@ class Database:
                             pos INTEGER)""")
                 
                 cursor.execute("""CREATE TABLE IF NOT EXISTS stopwatches(
-                            id INTEGER UNIQUE, 
+                            id INTEGER UNIQUE,
                             type TEXT DEFAULT duration,
                             type_duration TEXT DEFAULT stopwatch,
                             label TEXT,
                             current_time TEXT,
                             elapsed TEXT,
-                            paused BOOLEAN, 
+                            alerting BOOLEAN DEFAULT 0,
+                            paused BOOLEAN,
                             deleted BOOLEAN,
                             pos INTEGER )""")
                 
                 cursor.execute("""CREATE TABLE IF NOT EXISTS timers(
-                            id INTEGER UNIQUE, 
+                            id INTEGER UNIQUE,
                             type TEXT DEFAULT duration,
                             type_duration TEXT DEFAULT timer,
                             label TEXT,
@@ -55,8 +57,9 @@ class Database:
                             remaining_time TEXT,
                             elapsed TEXT,
                             total_elapsed TEXT,
-                            completed BOOLEAN, 
-                            paused BOOLEAN, 
+                            alerting BOOLEAN DEFAULT 0,
+                            completed BOOLEAN,
+                            paused BOOLEAN,
                             deleted BOOLEAN,
                             pos INTEGER )""")
             con.commit()

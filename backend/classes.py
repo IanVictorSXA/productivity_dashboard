@@ -69,6 +69,14 @@ class Task:
         return "UPDATE tasks SET label = ? WHERE id = ?", \
                 (self.label, self.id)
 
+    def ring(self, msg: Message):
+        self.alerting = True
+        return "UPDATE tasks SET alerting = 1 WHERE id = ?", (self.id,)
+
+    def stop_ring(self, msg: Message):
+        self.alerting = False
+        return "UPDATE tasks SET alerting = 0 WHERE id = ?", (self.id,)
+
     def get_ApiTask(self):
         task = dict(id=self.id, label=self.label, completed=self.completed) 
         return task
@@ -83,15 +91,23 @@ class Event(Task):
 
 
     def get_tuple_to_save(self):
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, deleted, pos) VALUES(?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, deleted, pos) VALUES(?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.deleted, self.pos)
 
     def edit(self, msg : Message):
         self.label = msg.label
         self.ring_time = parse_iso_datetime(msg.ring_time)
-        
+
         return "UPDATE events SET label = ?, ring_time = ? WHERE id = ?", \
                 (self.label, msg.ring_time, self.id)
+
+    def ring(self, msg: Message):
+        self.alerting = True
+        return "UPDATE events SET alerting = 1 WHERE id = ?", (self.id,)
+
+    def stop_ring(self, msg: Message):
+        self.alerting = False
+        return "UPDATE events SET alerting = 0 WHERE id = ?", (self.id,)
 
     def get_ApiEvent(self):
         return self.get_ApiTask() | dict(ring_time=str(self.ring_time))
@@ -105,9 +121,9 @@ class Duration(Task):
         self.paused = msg.paused
 
     def get_tuple_to_save(self):
-        return "INSERT OR IGNORE INTO stopwatches (id, label, current_time, elapsed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?)", \
+        return "INSERT OR IGNORE INTO stopwatches (id, label, current_time, elapsed, alerting, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?)", \
             (self.id, self.label, self.current_time.strftime(time_format),
-             self.get_elapsed_str(self.elapsed), self.paused, self.deleted, self.pos)
+             self.get_elapsed_str(self.elapsed), self.alerting, self.paused, self.deleted, self.pos)
     
     def get_elapsed_str(self, elapsed : timedelta):
         total_seconds = int(elapsed.total_seconds())
@@ -145,6 +161,16 @@ class Duration(Task):
         return "UPDATE stopwatches SET deleted = 1, elapsed = ? WHERE id = ?", \
                 (msg.elapsed, self.id)
 
+    def ring(self, msg: Message):
+        self.alerting = True
+        self.elapsed = parse_total_timedelta(msg.elapsed) if msg.elapsed else self.elapsed
+        return "UPDATE stopwatches SET alerting = 1, elapsed = ? WHERE id = ?", \
+                (self.get_elapsed_str(self.elapsed), self.id)
+
+    def stop_ring(self, msg: Message):
+        self.alerting = False
+        return "UPDATE stopwatches SET alerting = 0 WHERE id = ?", (self.id,)
+
     def get_ApiDuration(self):
         elapsed_ms = self.elapsed.total_seconds() * 1000
         started_at = self.current_time.timestamp() * 1000 if not self.paused else None
@@ -163,10 +189,10 @@ class Timer(Duration):
         self.remaining_time = parse_total_timedelta(msg.remaining_time) if msg.remaining_time is not None else self.total_time
         
     def get_tuple_to_save(self):
-        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, completed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, alerting, completed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
             (self.id, self.label, self.current_time.strftime(time_format), self.get_elapsed_str(self.total_time),
              self.get_elapsed_str(self.remaining_time), self.get_elapsed_str(self.elapsed),
-             self.get_elapsed_str(self.total_elapsed), self.completed, self.paused,
+             self.get_elapsed_str(self.total_elapsed), self.alerting, self.completed, self.paused,
              self.deleted, self.pos)
 
     def pause(self, msg: Message):
@@ -218,9 +244,19 @@ class Timer(Duration):
 
         self.elapsed = parse_total_timedelta(msg.elapsed)
         self.total_elapsed += self.elapsed
-    
+
         return "UPDATE timers SET completed = ?, total_elapsed = ?, elapsed = ? WHERE id = ?", \
                 (self.completed, self.get_elapsed_str(self.total_elapsed), msg.elapsed, self.id)
+
+    def ring(self, msg: Message):
+        self.alerting = True
+        self.elapsed = parse_total_timedelta(msg.elapsed) if msg.elapsed else self.elapsed
+        return "UPDATE timers SET alerting = 1, elapsed = ? WHERE id = ?", \
+                (self.get_elapsed_str(self.elapsed), self.id)
+
+    def stop_ring(self, msg: Message):
+        self.alerting = False
+        return "UPDATE timers SET alerting = 0 WHERE id = ?", (self.id,)
 
     def get_ApiDuration(self):
         elapsed_ms = self.elapsed.total_seconds() * 1000
@@ -268,9 +304,9 @@ class TaskManager:
             case "complete":
                 command, arguments = self.complete(msg)
             case "ring":
-                pass
+                command, arguments = self.ring(msg)
             case "stop_ring":
-                pass
+                command, arguments = self.stop_ring(msg)
             case "close":
                 pass
             case _:
@@ -396,9 +432,38 @@ class TaskManager:
             case "event":
                 return self.edit_helper(self.events, msg)
 
+    def ring_helper(self, sorted_ids : list[Task], msg : Message):
+        index = sorted_find_index(sorted_ids, msg.id)
+        if index != -1:
+            return sorted_ids[index].ring(msg)
+        else:
+            print("Card not in array")
+
     def ring(self, msg : Message):
-        pass
-    
+        match msg.type:
+            case "task":
+                return self.ring_helper(self.tasks, msg)
+            case "duration":
+                return self.ring_helper(self.durations, msg)
+            case "event":
+                return self.ring_helper(self.events, msg)
+
+    def stop_ring_helper(self, sorted_ids : list[Task], msg : Message):
+        index = sorted_find_index(sorted_ids, msg.id)
+        if index != -1:
+            return sorted_ids[index].stop_ring(msg)
+        else:
+            print("Card not in array")
+
+    def stop_ring(self, msg : Message):
+        match msg.type:
+            case "task":
+                return self.stop_ring_helper(self.tasks, msg)
+            case "duration":
+                return self.stop_ring_helper(self.durations, msg)
+            case "event":
+                return self.stop_ring_helper(self.events, msg)
+
     def complete_helper(self, sorted_ids : list[Task], msg : Message):
         index = sorted_find_index(sorted_ids, msg.id)
         if index != -1:

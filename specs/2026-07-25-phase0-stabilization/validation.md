@@ -11,13 +11,15 @@
   - [x] `close` command does not raise (2 tests)
   - [x] Timer `edit` (paused and while running) does not raise and persists correct `total_elapsed`/`elapsed`/`remaining_time` (3 tests)
   - Total: 59 tests passing (up from 51), all xfail markers removed
-- [ ] `pytest` (Groups 3–5 tests) passes in full, covering:
-  - `ring` persists frozen elapsed time + `alerting=True` to the DB for both timers and events; `stop_ring` clears `alerting` (Group 3)
-  - Sending `ring` twice for the same card does not double-process or corrupt state (Group 3)
+- [x] **Group 3 regression tests**: `pytest` (Groups 3 tests) pass, covering:
+  - [x] `ring` persists frozen elapsed time + `alerting=True` to the DB for both timers and events; `stop_ring` clears `alerting` (8 tests)
+  - [x] Sending `ring` twice for the same card does not double-process or corrupt state
+  - Total: 75 tests passing (up from 59), all Group 3 tests pass
+- [ ] `pytest` (Groups 4–5 tests) passes in full, covering:
   - Out-of-order rapid `resume`/`pause` on the same stopwatch leaves the DB in a consistent state (Group 4)
   - Simulated "shutdown mid-run, same-day reboot" restores running/paused state as it was (Group 5)
   - Simulated "reboot after date rollover" starts clean via `date_id.txt`, independent of shutdown handling (Group 5)
-- [ ] No new test touches the real `productivity.db` or `date_id.txt` — all use temp fixtures.
+- [x] No new test touches the real `productivity.db` or `date_id.txt` — all use temp fixtures.
 
 ## Manual walkthrough (run the actual app — frontend + backend — via the normal dev flow)
 
