@@ -23,8 +23,8 @@
 - [x] **Group 5 regression tests**: `pytest` (Group 5 tests) pass, covering:
   - [x] Simulated "shutdown mid-run, same-day reboot" restores running/paused state as it was (4 tests)
   - [x] Simulated "reboot after date rollover" starts clean via `date_id.txt`, independent of shutdown handling
-  - [x] (Addendum) Dismissed events stay dismissed after reload; editing a ringing/dismissed event resets its alerting/completed state — 2 additional tests in `test_group3.py`
-  - [x] (Addendum) A rung timer/stopwatch no longer reloads as "still running" and re-fires ring — 1 additional test in `test_group3.py`
+  - [x] (Addendum) Dismissed events stay dismissed after reload; editing a ringing/dismissed event resets its alerting/completed state — 2 additional tests in `test_phase0_group3.py`
+  - [x] (Addendum) A rung timer/stopwatch no longer reloads as "still running" and re-fires ring — 1 additional test in `test_phase0_group3.py`
   - Total: 82 tests passing
 - [x] No new test touches the real `productivity.db` or `date_id.txt` — all use temp fixtures.
 
@@ -43,11 +43,11 @@
 
 ## Merge bar
 
-- [ ] All automated tests pass.
-- [ ] All 10 manual walkthrough steps pass with no unhandled exceptions in either terminal.
-- [ ] The confirmed crash bug (`Timer.edit` typo) is fixed and covered by regression tests, not just manually patched. The `close` command no-op is implemented and covered by a regression test that it does not raise.
-- [ ] `ring`/`stop_ring` are no longer no-ops — `alerting` state is visibly correct after a backend restart mid-ring.
+- [x] All automated tests pass (82 tests, `python -m pytest backend/tests/ -q`).
+- [ ] All 10 manual walkthrough steps pass with no unhandled exceptions in either terminal. (Not re-run since Group 5; Groups 6–7 changed no frontend/card-logic behavior. Recommend a full re-run before final Phase 0 sign-off.)
+- [x] The confirmed crash bug (`Timer.edit` typo) is fixed and covered by regression tests, not just manually patched. The `close` command no-op is implemented and covered by a regression test that it does not raise.
+- [x] `ring`/`stop_ring` are no longer no-ops — `alerting` state is visibly correct after a backend restart mid-ring.
 - [x] Decisions made in Plan Group 5 (what shutdown should actually delete, if anything) are written back into `requirements.md` or `plan.md` as the final decision, so the roadmap reflects intent, not just the fix. **Decision**: shutdown deletes nothing; card clearing is exclusively the day-rollover's responsibility.
-- [ ] Every Python file in `backend/` has a module-level docstring, and every function/method has a docstring, per Plan Group 6.
-- [ ] `specs/roadmap.md` Phase 0 items (0a–0e) are checked off.
-- [ ] `README.md` has a real project overview + setup instructions, its API examples are corrected (no stale `"task"` field, `close`/`ring`/`stop_ring` documented), and `readme_claude.md` is folded in and removed per Plan Group 8.
+- [x] Every Python file in `backend/` has a module-level docstring, and every function/method has a docstring, per Plan Group 6.
+- [x] `specs/roadmap.md` Phase 0 items (0a–0e) are checked off.
+- [x] `README.md` has a real project overview + setup instructions, its API examples are corrected (no stale `"task"` field, `close`/`ring`/`stop_ring` documented), and `readme_claude.md` is folded in and removed per Plan Group 8.

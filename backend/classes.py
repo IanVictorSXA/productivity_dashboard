@@ -266,7 +266,6 @@ class Duration(Task):
         """
         elapsed_ms = self.elapsed.total_seconds() * 1000
         started_at = self.current_time.timestamp() * 1000 if not self.paused else None
-        print(started_at)
         stopwatch = dict(id=self.id, label=self.label, subtype="stopwatch",
                          total_ms=0, accumulated_ms=elapsed_ms, started_at=started_at,
                          alerting=False)
@@ -326,8 +325,6 @@ class Timer(Duration):
         """Shared helper: update `remaining_time`/`elapsed` from a Message (used by `pause`)."""
         self.remaining_time = parse_total_timedelta(msg.remaining_time)
         self.elapsed = parse_total_timedelta(msg.elapsed)
-        # print(self.remaining_time)
-        # print(self.elapsed)
 
     def edit(self, msg : Message):
         """Rename and/or reset the countdown to a new `total_time`.
@@ -415,12 +412,10 @@ class TaskManager:
     # completed: bool | None = None # is type task object completed?
     def process_command(self, msg : Message):
         """Entry point for every `POST /api` call: dispatch on `msg.command` and persist the result."""
-        # print(msg)
         command, arguments = "", ()
 
         match msg.command:
             case "create":
-                print(msg)
                 command, arguments = self.create(msg)
             case "delete":
                 command, arguments = self.delete(msg)
@@ -477,9 +472,7 @@ class TaskManager:
         last_id, data = self.db.retrieveAll()
 
         for card in data:
-            print("Card: ", card)
             msg = Message.model_validate(card)
-            print(msg)
             self.create(msg)
 
         self.tasks.sort(key=lambda x: x.id)
@@ -528,7 +521,7 @@ class TaskManager:
         if index != -1:
             return self.durations[index].pause(msg)
         else:
-            print("Card not in array")
+            print(f"pause: no duration/timer with id={msg.id}")
             return "", ()
 
     def resume(self, msg : Message):
@@ -537,7 +530,7 @@ class TaskManager:
         if index != -1:
             return self.durations[index].resume(msg)
         else:
-            print("Card not in array")
+            print(f"resume: no duration/timer with id={msg.id}")
             return "", ()
 
     def delete_helper(self, sorted_ids : list[Task], msg : Message):
@@ -549,7 +542,7 @@ class TaskManager:
             del sorted_ids[index]
             return card.delete(msg)
         else:
-            print("Card not in array")
+            print(f"delete: no {msg.type} with id={msg.id}")
             return "", ()
 
     def delete(self, msg : Message):
@@ -557,7 +550,6 @@ class TaskManager:
         match msg.type:
             case "task":
                 return self.delete_helper(self.tasks, msg)
-                # print("array", "array:", [str(task) for task in self.tasks])
 
             case "duration":
                 return self.delete_helper(self.durations, msg)
@@ -571,7 +563,7 @@ class TaskManager:
         if index != -1:
             return sorted_ids[index].edit(msg)
         else:
-            print("Card not in array")
+            print(f"edit: no {msg.type} with id={msg.id}")
             return "", ()
 
     def edit(self, msg : Message):
@@ -590,7 +582,7 @@ class TaskManager:
         if index != -1:
             return sorted_ids[index].ring(msg)
         else:
-            print("Card not in array")
+            print(f"ring: no {msg.type} with id={msg.id}")
             return "", ()
 
     def ring(self, msg : Message):
@@ -609,7 +601,7 @@ class TaskManager:
         if index != -1:
             return sorted_ids[index].stop_ring(msg)
         else:
-            print("Card not in array")
+            print(f"stop_ring: no {msg.type} with id={msg.id}")
             return "", ()
 
     def stop_ring(self, msg : Message):
@@ -628,7 +620,7 @@ class TaskManager:
         if index != -1:
             return sorted_ids[index].complete(msg)
         else:
-            print("Card not in array")
+            print(f"complete: no {msg.type} with id={msg.id}")
             return "", ()
 
     def complete(self, msg : Message):
@@ -648,37 +640,4 @@ def sorted_find_index(sorted_arr : list[Task], target_id : int):
     if (index < len(sorted_arr)) and (sorted_arr[index].id == target_id):
         return index
     return -1
-
-# task = Task(0, "task 1")
-# task2 = Task(1, "task 2", completed=True)
-
-# stopwatch = Duration(2, "stopwatch", "stopwatch paused", parse_time("01:27:00 AM"))
-# stopwatch2 = Duration(1, "stopwatch", "stopwatch resumed",parse_time("01:16:00 AM"))
-# stopwatch2.paused = False
-# stopwatch2.elapsed = parse_total_timedelta("00:10:00")
-
-# timer1 = Timer(4, "timer","paused", parse_time("3:11:00 AM"), parse_total_timedelta("1:20:30"))
-# timer2 = Timer(5, "timer","resume", parse_time("3:00:00 AM"), parse_total_timedelta("2:00:00"))
-# timer2.paused = False
-
-
-# tm = TaskManager()
-
-# tm.durations.clear()
-# print("test")
-# print(parse_time("01:28:00 AM").timestamp())
-# print(datetime.now(timezone.utc).timestamp())
-
-# event1 = Event(8, "event 00:30", parse_iso_datetime("2026-06-19T05:30:00.000Z"))
-
-# tm.tasks.append(task)
-# tm.tasks.append(task2)
-
-# tm.durations.append(stopwatch)
-# tm.durations.append(stopwatch2)
-
-# tm.durations.append(timer1)
-# tm.durations.append(timer2)
-
-# tm.events.append(event1)
 

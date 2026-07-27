@@ -91,13 +91,10 @@ class Database:
         self.filename = "date_id.txt"
         with open(self.filename, "r") as file:
             self.text = file.readlines()
-            # print("lines read: ", self.text)
             tz = ZoneInfo(self.text[0].strip())
-            # print("today: ", datetime.now(tz=tz))
 
         if len(self.text) == 1:
             date = datetime.now(tz=tz).date()
-            # print("completing text file")
             self.text.extend([date.strftime(date_str_format) + "\n", "" ])
             self.update_textfile()
 
@@ -105,11 +102,9 @@ class Database:
             try:
                 date = datetime.strptime(self.text[1].strip(), date_str_format).date()
                 today = datetime.now(tz=tz).date()
-                # print(date, today, "date is not today? ", date != today)
                 if date != today:
                     self.deleteAll()
                     self.text[1] = today.strftime(date_str_format) + "\n"
-                    # print("new_text: ", self.text)
                     self.update_textfile()
                 else:
                     self.last_id = int(self.text[2].strip())
@@ -124,7 +119,6 @@ class Database:
             today = datetime.now(tz=tz).date()
             self.text = [self.text[0], today.strftime(date_str_format) + "\n", "-1\n"]
             self.update_textfile()
-        # print("last_id is ", self.last_id)
 
     def update_textfile(self):
         """Rewrite `date_id.txt` with the current `self.last_id` (line 1 timezone / line 2 date are untouched here)."""
@@ -140,11 +134,9 @@ class Database:
         the id-tracking side effect is inferred from the SQL keyword rather
         than passed explicitly.
         """
-        print(command, arguments)
         if command.startswith("INSERT"):
             self.last_id = arguments[0]
             self.update_textfile()
-            # print(arguments)
 
         with sqlite3.connect(self.db_name) as con:
             with closing(con.cursor()) as cursor:
@@ -153,7 +145,7 @@ class Database:
 
     def retrieveAll(self):
         """Retrieves all the data (array of tuples) + last id used:
-        lasd id, data"""
+        last id, data"""
         data = []
         with sqlite3.connect(self.db_name) as con:
             con.row_factory = dict_factory
@@ -163,7 +155,6 @@ class Database:
                     cursor.execute(command)
                     rows = cursor.fetchall()
                     data.extend(rows)
-        # print(self.last_id, data)
 
         return self.last_id, data
     
@@ -177,5 +168,4 @@ class Database:
                     
                 con.commit()
                 cursor.execute("VACUUM")
-        # print("deleted everything")
 

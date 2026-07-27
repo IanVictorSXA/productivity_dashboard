@@ -12,7 +12,7 @@ The core loop (timers, stopwatches, events, persistence) is functionally built, 
 - [x] Confirm state restore on startup matches state at last shutdown (no drift/loss) — fixed shutdown deleting all cards instead of only the day-rollover doing so (Group 5)
 - [x] Fix any bugs found above; add lightweight regression checks where practical — 82 backend tests passing across Groups 1–5
 
-See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements, and validation status per group. Groups 6 (docstrings), 7 (debug-print cleanup), and 8 (README rewrite) are documentation/quality passes still in progress before Phase 0 is fully closed out and the full `validation.md` manual walkthrough is signed off.
+See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements, and validation status per group. Groups 6–8 (docstrings, debug-print cleanup, README rewrite) are all done; the remaining Phase 0 item is re-running the full `validation.md` manual browser walkthrough before final sign-off.
 
 ## Phase 1 — Core (done)
 

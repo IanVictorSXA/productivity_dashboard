@@ -24,7 +24,6 @@ app.add_middleware(
 @app.post("/api")
 def update_time_card(msg: Message):
     """Apply a single command (create/edit/pause/.../close) to the task manager."""
-    # print({"id": msg.id, "command": msg.command})
     tm.process_command(msg)
 
     return {"success": True}
