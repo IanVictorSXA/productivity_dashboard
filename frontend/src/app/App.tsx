@@ -55,7 +55,7 @@ type ApiDuration = {
   alerting: boolean;
 };
 type ApiTask  = { id: number; label: string; completed: boolean };
-type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean };
+type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean };
 type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[] };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ export default function App() {
           startedAt: d.started_at, alerting: d.alerting,
         }));
         loadedEvents = (state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: false,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
         }));
         loadedTasks = (state.tasks ?? []).map(t => ({
           id: t.id, label: t.label, completed: t.completed,
@@ -584,25 +584,10 @@ export default function App() {
   });
 }, []);
 
-  // ── Shutdown: delete all cards, then send close ──
+  // ── Shutdown: send close command (backend date-based rollover handles card deletion) ──
   const handleShutdown = useCallback(async () => {
-    const now = Date.now();
-    const deletions: Promise<void>[] = [];
-
-    for (const d of durations) {
-      const elapsed = getElapsedMs(d, now);
-      const payload: Record<string, unknown> = { id: d.id, type: "duration", command: "delete" };
-      payload.elapsed = elapsed;
-      if (d.subtype === "timer") payload.remaining_time = fmtMs(Math.max(0, d.totalMs - elapsed));
-      deletions.push(sendMessage(payload));
-    }
-    for (const ev of events) {
-      deletions.push(sendMessage({ id: ev.id, type: "event", command: "delete" }));
-    }
-
-    await Promise.all(deletions);
     await sendMessage({ command: "close", current_time: nowTimeStr() });
-  }, [durations, events]);
+  }, []);
 
   // ── Clock display (only used for header) ──
   // Referencing `tick` here keeps the header updating every second.
