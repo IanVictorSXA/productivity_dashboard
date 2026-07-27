@@ -159,6 +159,13 @@ class Event(Task):
         return "UPDATE events SET label = ?, ring_time = ?, alerting = 0, completed = 0 WHERE id = ?", \
                 (self.label, msg.ring_time, self.id)
 
+    def delete(self, msg : Message = None):
+        """Soft-delete: mark deleted so it's excluded from future `retrieveAll()` reads."""
+        self.deleted = True
+
+        return "UPDATE events SET deleted = 1 WHERE id = ?", \
+                (self.id,)
+
     def ring(self, msg: Message):
         """Called when the frontend detects `ring_time` has passed."""
         self.alerting = True
