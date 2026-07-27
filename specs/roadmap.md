@@ -23,12 +23,13 @@ See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements
 - [x] Stopwatches
 - [x] Events
 
-## Phase 2 — Round out tracking + stats
+## Phase 2 — Round out tracking + stats (done)
 
-- [ ] **2a.** Add "Exercise" stopwatch (5th mutually-exclusive category)
-- [ ] **2b.** Add "Shower" stopwatch
-- [ ] **2c.** Daily stats: include exercise/shower time and total tracked time in the existing stats view
-- [ ] **2d.** Daily stats: compute and display a simple per-category breakdown (no scoring yet)
+- [x] **2a.** Add "Exercise" stopwatch (mutually exclusive)
+- [x] **2b.** Add "Shower" stopwatch (mutually exclusive)
+- [x] **2c.** Add "Fun" stopwatch (mutually exclusive)
+
+See `specs/2026-07-26-phase2-new-stopwatches/` for plan, requirements, and validation.
 
 ## Phase 3 — Google Sheets sync
 
@@ -44,6 +45,8 @@ See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements
 - [ ] **4b.** Weekly summary view
 - [ ] **4c.** Monthly trend view
 - [ ] **4d.** Historical charts (recharts) sourced from Sheets history
+- [ ] **4e.** Daily stats: include exercise/shower time and total tracked time in the existing stats view
+- [ ] **4f.** Daily stats: compute and display a simple per-category breakdown (no scoring yet)
 
 ## Phase 5 — Voice: predefined commands
 
