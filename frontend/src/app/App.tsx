@@ -16,8 +16,8 @@ import avatarImg from "@/imports/bloodsport_pfp.jpg";
 // ─── Config ───────────────────────────────────────────────────────────────────
 const API_ENDPOINT = "http://localhost:8080/api";
 
-// Only these three stopwatches are mutually exclusive
-const MUTEX_LABELS = ["Work", "Misc", "Waste"];
+// Only these stopwatches are mutually exclusive
+const MUTEX_LABELS = ["Work", "Misc", "Waste", "Exercise", "Shower", "Fun"];
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 async function sendMessage(payload: object): Promise<void> {
@@ -211,7 +211,7 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Boot: fetch state, ensure Work/Misc/Waste exist ──
+  // ── Boot: fetch state, ensure all MUTEX_LABELS stopwatches exist ──
   useEffect(() => {
     (async () => {
       const state = await fetchState();
@@ -235,7 +235,7 @@ export default function App() {
         }));
       }
 
-      // Ensure Work / Misc / Waste stopwatches exist
+      // Ensure all mutex stopwatches exist
       const toCreate: DurationCard[] = [];
       for (const name of MUTEX_LABELS) {
         if (!loadedDurations.some(d => d.label === name)) {

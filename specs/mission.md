@@ -10,7 +10,7 @@ A single user (the owner of the Pi station) who wants an always-on, glanceable d
 
 ## Core Pillars
 
-1. **Accurate time tracking** — Timers for scheduled sessions, mutually-exclusive stopwatches for open-ended activity categories (Work, Misc, Waste, and eventually Exercise, Shower). Only one productivity category runs at a time, so recorded time reflects reality, not overlapping guesses.
+1. **Accurate time tracking** — Timers for scheduled sessions, mutually-exclusive stopwatches for open-ended activity categories (Work, Misc, Waste, and eventually Exercise, Shower, and Fun). Only one productivity category runs at a time, so recorded time reflects reality, not overlapping guesses.
 2. **Distraction-free interaction** — The touchscreen UI should require minimal taps to start/stop/acknowledge. No feeds, no notifications beyond timer/event alarms, no unrelated apps.
 3. **Long-term insight, not just logging** — Daily stats are meaningless in isolation. Google Sheets sync exists so trends, graphs, and history persist beyond the device and beyond what SQLite alone is good at surfacing.
 4. **Hands-free control as a defining long-term goal** — This is not a stretch feature bolted on later; the project is explicitly working toward full voice control (wake word → speech-to-text → intent → action), and the assistant should eventually be able to answer questions about the day (e.g. today's schedule) as well as execute commands. Voice is built last, but it is core to what "done" looks like.
