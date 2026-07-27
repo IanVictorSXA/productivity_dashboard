@@ -22,6 +22,8 @@ Full details, including the planned Google Sheets and voice-assistant stacks, ar
 
 ## Setup & Running
 
+Note: rename date_id_example.txt to date_id.txt
+
 ### Option A: Docker Compose (recommended)
 
 ```bash
