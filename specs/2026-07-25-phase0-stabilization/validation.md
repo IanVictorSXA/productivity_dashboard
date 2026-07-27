@@ -44,7 +44,7 @@
 ## Merge bar
 
 - [x] All automated tests pass (82 tests, `python -m pytest backend/tests/ -q`).
-- [ ] All 10 manual walkthrough steps pass with no unhandled exceptions in either terminal. (Not re-run since Group 5; Groups 6–7 changed no frontend/card-logic behavior. Recommend a full re-run before final Phase 0 sign-off.)
+- [x] All 10 manual walkthrough steps pass with no unhandled exceptions in either terminal. Confirmed by the user in a manual browser walkthrough on 2026-07-26, after Groups 6–8 landed — this is the final Phase 0 sign-off.
 - [x] The confirmed crash bug (`Timer.edit` typo) is fixed and covered by regression tests, not just manually patched. The `close` command no-op is implemented and covered by a regression test that it does not raise.
 - [x] `ring`/`stop_ring` are no longer no-ops — `alerting` state is visibly correct after a backend restart mid-ring.
 - [x] Decisions made in Plan Group 5 (what shutdown should actually delete, if anything) are written back into `requirements.md` or `plan.md` as the final decision, so the roadmap reflects intent, not just the fix. **Decision**: shutdown deletes nothing; card clearing is exclusively the day-rollover's responsibility.

@@ -142,7 +142,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 - ✅ Fixed two docstring typos noticed while touching this code: `sorted_find_index`'s stray leading quote (Group 6) and `retrieveAll`'s "lasd id" → "last id".
 - ✅ Verified via `python -m pytest backend/tests/ -q` (82 passed) and a standalone smoke test (isolated temp dir, fresh `date_id.txt`): app boots cleanly, `create`/`pause`(missing id)/`close` all behave correctly and the new "card not found" messages print as expected.
 - ✅ `specs/roadmap.md`'s Phase 0 items (0a–0e) were already checked off from Groups 1–5; updated its Group 6/7/8 status note now that 6 and 7 are done.
-- Full manual walkthrough (`validation.md`'s 10-step browser-driven checklist) not re-run in this pass — no frontend or card-logic behavior changed (docstrings/comments + print cleanup only), so the walkthrough result from when Groups 1–5 landed still holds; re-run recommended before final Phase 0 sign-off if it hasn't been done end-to-end yet.
+- Full manual walkthrough (`validation.md`'s 10-step browser-driven checklist) was not re-run in this pass — no frontend or card-logic behavior changed (docstrings/comments + print cleanup only). It was subsequently run end-to-end by the user on 2026-07-26 and passed, closing out Phase 0.
 
 ## 8. Fill out README.md — ✅ COMPLETE
 

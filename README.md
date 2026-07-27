@@ -1,15 +1,15 @@
 # Productivity Dashboard
 
-A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phase 0, stabilization, is current).
+A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–2 are complete; Phase 3, Google Sheets sync, is next).
 
 ## Features
 
 - **Timers** — count down toward zero for scheduled sessions (work blocks, meetings, breaks); ring and blink until dismissed when they hit zero.
-- **Stopwatches** — count up for open-ended activity tracking. **Work**, **Misc**, and **Waste** are mutually exclusive: starting one automatically pauses the other two, so recorded time never overlaps. (Exercise/Shower categories are planned — see Phase 2 in `specs/roadmap.md`.)
+- **Stopwatches** — count up for open-ended activity tracking. **Work**, **Misc**, **Waste**, **Exercise**, **Shower**, and **Fun** are mutually exclusive: starting one automatically pauses the others, so recorded time never overlaps.
 - **Events** — one-shot alarms for a specific clock time (e.g. "Lunch 12pm"); ring and stay dismissed once acknowledged, even across a page refresh.
 - **Tasks** — a lightweight, drag-to-reorder checklist alongside the trackers, for quick day-of to-dos (not the project's focus — see "Not a task manager" in `specs/mission.md`).
 - **Persistent state** — all cards are backed by SQLite and restored on every backend restart. A same-day restart (e.g. a Pi reboot) preserves everything exactly as it was; state only resets once the calendar date rolls over (see `backend/date_id.txt` below).
-- **Planned**: Google Sheets sync for long-term history (Phase 3), historical analytics (Phase 4), and eventually full voice control — wake word → speech-to-text → intent → action (Phases 5–6).
+- **Planned**: Google Sheets sync via a service account, for loading the day's schedule and events (Phase 3); an audible alarm when a timer or event hits zero (Phase 4); full voice control — wake word → speech-to-text → intent → action (Phases 5–6); historical analytics plus the end-of-day upload to Sheets (Phase 7); and dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 8).
 
 ## Tech Stack
 
