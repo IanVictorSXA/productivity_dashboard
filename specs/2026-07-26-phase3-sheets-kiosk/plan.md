@@ -33,16 +33,16 @@ Already confirmed (in `requirements.md` § Sheet shape): one tab named `Day`, on
 
 **Verify**: `docker compose config` resolves cleanly with no `.env` present (confirmed). Existing 82 backend tests pass unmodified with `sheets_config` importable but unused by any running code yet (nothing calls into it until Group 3).
 
-## 3. Authenticated Sheets client (3a)
+## 3. Authenticated Sheets client (3a) — **COMPLETE**
 
 New `backend/sheets.py`:
 
-- `get_client()` — build `google.oauth2.service_account.Credentials` from the key file with the **read-only** scope, authorize `gspread`, return the client. Raises a typed error (not a bare exception) for missing/malformed key.
-- `open_worksheet(client, spreadsheet_id, tab_name)` — open the sheet and return the worksheet, with the 403/404 cases distinguished.
-- Explicit request timeout so a dead network cannot hang startup.
-- A `python -m sheets --check` style entry point (or equivalent function) that authenticates, prints the service-account email and the sheet title, and exits — the quickest way to prove sharing works on the Pi without booting the whole app.
+- [x] `get_client(key_file=None)` — builds `google.oauth2.service_account.Credentials` from the key file with the **read-only** scope, authorizes `gspread`, returns the client. Typed errors throughout: `SheetsConfigError` (env var unset), `SheetsAuthError` (key missing / not JSON / not a service-account key / rejected by `google-auth`), `SheetsAccessError` (403), `SheetsNotFoundError` (404 spreadsheet or missing tab), `SheetsNetworkError` (DNS/route/timeout) — all under a `SheetsError` base so Group 6's guard can catch one class.
+- [x] `open_worksheet(client, spreadsheet_id=None, tab_name=None)` — defaults both from `sheets_config`, opens the sheet and returns the worksheet. Note `gspread.open_by_key` is lazy, so this is the first call that touches the network and the one that raises 403/404. The 403 message names the service account's `client_email` and says to share the sheet with it; `get_service_account_email()` supplies that and never raises.
+- [x] Explicit `REQUEST_TIMEOUT_SECONDS = 15` via `client.set_timeout()`, so a dead network cannot hang startup.
+- [x] `python sheets.py --check` (flat modules, run from `/app` in the container): authenticates, prints the service-account email, spreadsheet title, and tab name/row count, exits 0; on any `SheetsError` it prints `Type: message` to stderr and exits 1. Bare `python sheets.py` runs the same check; anything else exits 2 with usage.
 
-**Verify**: on the Pi with real credentials, the check prints the sheet title; with the sheet unshared, it prints the 403 message naming the service-account email.
+**Verified**: against the real key and the real spreadsheet, `--check` prints `service account: python-api@…`, `spreadsheet: IAN'S REQUIÉM`, `tab: Day (1000 rows)`, `OK`. Failure paths walked one at a time — unset `SHEETS_KEY_FILE`, wrong path, `/dev/null`, valid JSON that isn't a service-account key, unset `SHEETS_SPREADSHEET_ID`, wrong spreadsheet id (404), wrong tab name (404) — each printing its typed message and exiting 1. The 403/unshared case is left for the manual walkthrough (validation step 2), since it needs the user to un-share the sheet. Existing 82 backend tests still pass, unmodified.
 
 ## 4. Cell parsing (3b, 3c) — *blocked on Group 1*
 
