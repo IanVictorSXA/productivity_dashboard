@@ -40,12 +40,18 @@ Auth uses a **Google Cloud service account**, not an OAuth user-consent flow: th
 Kiosk autostart (**3e**) is unrelated to Sheets but shares the same theme — the station should come up ready to use with no human intervention.
 
 - [ ] **3a.** Service-account auth on the backend: key file stored on-device (never committed), sheet shared with the service account email, authenticated client available to the app
-- [ ] **3b.** Start-of-day job: load the day's schedule from Sheets into the dashboard
+- [ ] **3b.** Start-of-day job: load the day's tasks from Sheets into the dashboard
 - [ ] **3c.** Start-of-day job: load events from Sheets into the dashboard
+
+  Source shape: a single tab named `Day`, column A only, where each non-empty cell is either an event or a task. Timers and stopwatches are never imported. The sheet is the source of truth for the cards it creates — a cell removed from column A removes the matching card from the dashboard.
+
 - [ ] **3d.** Handle failure paths (no network, missing/invalid key, sheet unreachable or unshared) without losing local data
 - [ ] **3e.** Kiosk mode starts automatically on every Pi 5 boot: backend and frontend services come up on their own, and the browser opens the dashboard full-screen with no chrome — no keyboard, mouse, or login step needed. Must survive a power cut, and recover if the browser or a service crashes.
+- [ ] **3f.** Manual sync button on the dashboard: re-run the reconciliation on demand, for when the day's agenda is edited in the sheet after the morning's automatic sync. Applies both additions and deletions; never touches cards the user created on the dashboard.
 
 The end-of-day upload of stats to Sheets moved to Phase 7, where the stats it writes are actually defined.
+
+See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validation.
 
 ## Phase 4 — Alarm sound
 
