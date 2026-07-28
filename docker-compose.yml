@@ -17,3 +17,12 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - ./backend:/app
+      # Defaults to /dev/null so `docker compose up` still boots with no
+      # SHEETS_KEY_FILE_HOST set; sheets.py treats /dev/null as an unreadable
+      # key file and skips sync (see requirements.md § Failure paths).
+      - ${SHEETS_KEY_FILE_HOST:-/dev/null}:/run/secrets/sheets_key.json:ro
+    environment:
+      - SHEETS_SYNC_ENABLED=${SHEETS_SYNC_ENABLED:-false}
+      - SHEETS_KEY_FILE=/run/secrets/sheets_key.json
+      - SHEETS_SPREADSHEET_ID=${SHEETS_SPREADSHEET_ID:-}
+      - SHEETS_TAB_NAME=${SHEETS_TAB_NAME:-Day}

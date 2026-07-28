@@ -12,3 +12,7 @@ CLAUDE.md
 .claude/
 .pytest_cache/
 date_id.txt
+backend/productivity-dashboard-503701-03b014c70abf.json
+.env
+.env.*
+!.env.example

@@ -23,15 +23,15 @@ Already confirmed (in `requirements.md` § Sheet shape): one tab named `Day`, on
 
 **Deliverable**: `requirements.md` § Sheet shape updated with the confirmed cell grammar and worked examples, replacing the open-input checklist. Nothing in Groups 4–5 gets written before this exists.
 
-## 2. Dependencies and configuration plumbing (3a)
+## 2. Dependencies and configuration plumbing (3a) — **COMPLETE**
 
-- Add `gspread` and `google-auth` to `backend/requirements.txt`.
-- New `backend/sheets_config.py` (or a small config block in the sync module): read `SHEETS_SYNC_ENABLED`, `SHEETS_KEY_FILE`, `SHEETS_SPREADSHEET_ID`, and the tab-name vars from the environment once, with `SHEETS_SYNC_ENABLED` defaulting to **false**.
-- `docker-compose.yml`: pass those env vars to the `backend` service and mount the key file read-only (e.g. `${SHEETS_KEY_FILE_HOST}:/run/secrets/sheets_key.json:ro`).
-- `.gitignore`: add the key-file name/pattern and any `.env` used to hold the ids.
-- Add a `.env.example` (or a README block) documenting each variable — no real ids or paths committed.
+- [x] `gspread`, `google-api-python-client`, `google-auth-httplib2`, `google-auth-oauthlib` in `backend/requirements.txt` (superset of the planned `gspread` + `google-auth`; `google-auth` comes in transitively).
+- [x] `backend/sheets_config.py`: reads `SHEETS_SYNC_ENABLED` (bool, default `false`), `SHEETS_KEY_FILE`, `SHEETS_SPREADSHEET_ID`, `SHEETS_TAB_NAME` (default `"Day"`, per the already-confirmed sheet shape) from the environment once at import time.
+- [x] `docker-compose.yml`: `backend` service gets the four env vars (each with a safe default/empty string) and a read-only bind mount `${SHEETS_KEY_FILE_HOST:-/dev/null}:/run/secrets/sheets_key.json:ro` — the `/dev/null` default means `docker compose up` still boots with no `.env` present; an absent real key file surfaces later as the documented "key file missing/unreadable" failure path (Group 6), not a compose-level error.
+- [x] `.gitignore`: already had the actual key filename (`backend/productivity-dashboard-503701-03b014c70abf.json`); added `.env` / `.env.*` (with `!.env.example` un-ignored).
+- [x] `.env.example` at the repo root documents all four variables with placeholder values only.
 
-**Verify**: with `SHEETS_SYNC_ENABLED` unset, `docker compose up` behaves exactly as before; no import runs, no new logs.
+**Verify**: `docker compose config` resolves cleanly with no `.env` present (confirmed). Existing 82 backend tests pass unmodified with `sheets_config` importable but unused by any running code yet (nothing calls into it until Group 3).
 
 ## 3. Authenticated Sheets client (3a)
 
