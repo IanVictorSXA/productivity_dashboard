@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–3 and 8–9 are unblocked. Groups 4–7 are blocked on the sheet layout being supplied (Group 1), and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot.
+**Dependency note**: Groups 1–3, 8–8b and 9 are unblocked. Groups 4–7 are blocked on the sheet layout being supplied (Group 1), and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Group 8b tunes what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence.
 
 ---
 
@@ -99,6 +99,23 @@ This is the diff described in `requirements.md` § Reconciliation. **Schema firs
 - [x] Install/enable instructions in `deploy/README.md`, plus status/log commands, the stop-via-systemctl-not-compose note, and the `.env` and 127.0.0.1-binding notes. The user runs these on the Pi; **nothing was installed into systemd from here**.
 
 **Verify**: `docker compose config` resolves with both restart policies present, and `systemd-analyze verify` on the unit reports no warnings (both confirmed). The reboot / power-cut / `docker kill` checks are validation steps 20–22 and 25, run on the Pi by the user after installing the unit.
+
+## 8b. Get the build off the boot path, and slim the frontend image (3e follow-up)
+
+Numbered `8b` rather than `12` so Groups 9–11, the validation step numbers, and the existing commit messages keep meaning what they say. Unblocked; do it before Group 11 so the docs close out against the final shape.
+
+Two changes, from what the first real run of the unit showed (4m51s to reach a listening container, and a 2.49GB frontend image):
+
+- **Drop `ExecStartPre` from `deploy/productivity-dashboard.service`.** The unit is the only reason the Pi ever rebuilds: BuildKit's cache is swept on a 60-day keep duration and a 5.588GiB reserved floor regardless of whether anything changed, and `docker compose build` re-runs a step whenever the cache record is missing — it does not treat the existing image as a cache source. So an untouched repo can still pay a full `FROM node:22` + `npm install` on a boot. Without the build, the Pi runs the image it has and boots in seconds, forever.
+- **Replace the stale-image guard the build was providing** — that failure (Group 3's `ModuleNotFoundError: No module named 'gspread'`) is real and must not come back silently:
+  - `deploy/README.md`: `docker compose build && sudo systemctl restart productivity-dashboard.service` becomes the documented step after **any** change to `backend/requirements.txt` or `frontend/package.json`, stated as a rule rather than a footnote.
+  - Rewrite the cold-cache note added in `75108e6` — with the build gone from boot, the cache only matters to a build the user is already sitting in front of.
+- **`frontend/dockerfile`: `FROM node:22` → `node:22-slim`.** The full base is most of the 2.49GB.
+  - **Risk to check first**: `-slim` has no `python3`/`make`/`g++`, so any dependency needing `node-gyp` will fail to install where it silently succeeded before. Build it and read the `npm install` output before assuming it worked; if something does need to compile, either add the toolchain in a builder stage or drop the change — a smaller image is not worth a fragile one.
+  - Note that switching bases is itself a one-time full rebuild, so do it at a keyboard, not before a reboot.
+  - Out of scope: `npm` vs the `pnpm` the tech stack names, and multi-stage builds. This group only changes the base image.
+
+**Verify**: `systemd-analyze verify` clean; `sudo systemctl restart productivity-dashboard.service` reaches a listening backend in seconds with no build in the journal. `docker compose build` after a `package.json` edit still produces a working frontend — dev server up, dashboard loads, no console errors, and `docker images` shows the image materially smaller. Then re-run kiosk validation steps 20–22 and 25 against the new unit, since the boot sequence changed.
 
 ## 9. Browser kiosk session (3e) — *blocked on Group 8*
 
