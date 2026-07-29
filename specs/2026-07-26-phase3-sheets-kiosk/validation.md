@@ -21,11 +21,14 @@ Then confirm two things before continuing:
 
 ### A. Auth and sharing (3a)
 
-1. With the key file mounted and `SHEETS_SYNC_ENABLED=true`, run the standalone check from Group 3 (`python sheets.py --check`). Confirm it prints the service-account email and the spreadsheet's title.
-   - **Partially done (Group 3, 2026-07-27)**: run on the Pi against the real key and the real spreadsheet, but *outside* the container (host venv, env vars passed inline) — printed `python-api@productivity-dashboard-503701.iam.gserviceaccount.com`, `IAN'S REQUIÉM`, `Day (1000 rows)`, `OK`. **Still to do here**: the same run inside the backend container with the compose mount and `SHEETS_SYNC_ENABLED=true`, which is what proves the mount path and env wiring, not just the credential.
-   - Also confirmed at the same time (config/auth failure half of section C, standalone rather than via app startup): unset `SHEETS_KEY_FILE`, wrong key path, `/dev/null` key, valid-JSON-but-not-a-service-account key, unset `SHEETS_SPREADSHEET_ID`, wrong spreadsheet id, and wrong tab name each print their own typed message and exit 1. Steps 11–18 still have to be re-run through the real app once the sync path exists.
-2. Un-share the spreadsheet from the service account, re-run the check. Confirm it reports a 403 and names the service-account email to share with — not a raw traceback. Re-share before continuing.
-3. Confirm `git status` shows no key file and no `.env` as untracked-but-addable content — i.e. `.gitignore` covers them.
+1. **[x]** With the key file mounted and `SHEETS_SYNC_ENABLED=true`, run the standalone check from Group 3 (`python sheets.py --check`). Confirm it prints the service-account email and the spreadsheet's title.
+   - **Done (Group 3, 2026-07-28)**, by the user via `docker compose run --rm backend python sheets.py --check` — the in-container run, so the compose mount and env wiring are proven, not just the credential. Printed the service-account email, `IAN'S REQUIÉM`, and `Day`.
+   - Prerequisite discovered here: the backend image predated the Group 2 `requirements.txt` change, so the first run failed with `ModuleNotFoundError: No module named 'gspread'`. **`docker compose build backend` is required after any backend dependency change** — the `./backend:/app` bind mount carries source, not site-packages. Noted for the Group 8 systemd unit, which must not run a stale image.
+   - Also confirmed (config/auth failure half of section C, standalone rather than via app startup): unset `SHEETS_KEY_FILE`, wrong key path, `/dev/null` key, valid-JSON-but-not-a-service-account key, unset `SHEETS_SPREADSHEET_ID`, wrong spreadsheet id, and wrong tab name each print their own typed message and exit 1. Steps 11–18 still have to be re-run through the real app once the sync path exists.
+2. **[x]** Un-share the spreadsheet from the service account, re-run the check. Confirm it reports a 403 and names the service-account email to share with — not a raw traceback. Re-share before continuing.
+   - **Done (Group 3, 2026-07-28)**: un-shared ⇒ `SheetsAccessError` with the "share it with `python-api@…`" hint, no traceback; re-shared ⇒ the check succeeds again. This was the last unexercised branch in `sheets.py`.
+3. **[x]** Confirm `git status` shows no key file and no `.env` as untracked-but-addable content — i.e. `.gitignore` covers them.
+   - **Done (2026-07-28)**: `.env.example` is the only credential-adjacent tracked file; neither the key JSON nor `.env` appears as untracked-addable.
 
 ### B. Start-of-day sync (3b, 3c)
 
