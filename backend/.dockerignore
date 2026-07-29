@@ -1,0 +1,13 @@
+# Runtime state, not source. docker-compose mounts ./backend over /app, so the
+# container gets the live copies of these at run time — baking them into the
+# image only ships stale data and, because they change on every run, breaks the
+# COPY layer's cache so every build produces a new image.
+productivity.db
+date_id.txt
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Never let a service-account key reach an image layer.
+*.json

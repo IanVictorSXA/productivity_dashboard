@@ -1,0 +1,11 @@
+# node_modules is an anonymous volume in docker-compose.yml, and the image
+# builds its own via `npm install` — a host copy would only bloat the build
+# context and shadow it.
+node_modules/
+.pnpm-store/
+
+# Build output and dev-server caches: regenerated in the container, and they
+# change on every run, which would break the COPY layer's cache.
+dist/
+.vite/
+*.log
