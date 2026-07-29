@@ -17,7 +17,7 @@ import avatarImg from "@/imports/bloodsport_pfp.jpg";
 const API_ENDPOINT = "http://localhost:8080/api";
 
 // Only these stopwatches are mutually exclusive
-const MUTEX_LABELS = ["Work", "Misc", "Waste", "Exercise", "Shower", "Fun"];
+const MUTEX_LABELS = ["Work", "Misc", "Eat", "Exercise", "Shower", "Fun"];
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 async function sendMessage(payload: object): Promise<void> {
