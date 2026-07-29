@@ -10,6 +10,7 @@ services:
       - VITE_API_URL=http://localhost:8080
     depends_on:
       - backend
+    restart: unless-stopped
   
   backend:
     build: ./backend
@@ -26,3 +27,4 @@ services:
       - SHEETS_KEY_FILE=/run/secrets/sheets_key.json
       - SHEETS_SPREADSHEET_ID=${SHEETS_SPREADSHEET_ID:-}
       - SHEETS_TAB_NAME=${SHEETS_TAB_NAME:-Day}
+    restart: unless-stopped

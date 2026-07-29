@@ -91,13 +91,14 @@ This is the diff described in `requirements.md` § Reconciliation. **Schema firs
 
 **Verify**: `GET /api` returns the field in both the success and failure cases; the frontend ignores the extra key without error.
 
-## 8. Services start on boot (3e)
+## 8. Services start on boot (3e) — **COMPLETE**
 
-- `docker-compose.yml`: add `restart: unless-stopped` to `frontend` and `backend`.
-- New `deploy/productivity-dashboard.service` systemd unit: `After=docker.service`, `Requires=docker.service`, `ExecStart=docker compose -f <path> up`, `ExecStop=docker compose down`, `Restart=on-failure`, `WorkingDirectory` at the repo root.
-- Install/enable instructions in `deploy/README.md` (the user runs these on the Pi; the agent does not install into systemd).
+- [x] `docker-compose.yml`: `restart: unless-stopped` on `frontend` and `backend`.
+- [x] New `deploy/productivity-dashboard.service` systemd unit: `Requires=docker.service`, `After=docker.service network-online.target`, `WorkingDirectory` at the repo root (so compose finds `docker-compose.yml` and `.env`), `ExecStart=docker compose up`, `ExecStop=docker compose down`, `Restart=on-failure` with `RestartSec=10`, `TimeoutStartSec=0` for the first cold build.
+- [x] `ExecStartPre=-/usr/bin/docker compose build` — added beyond the plan, from the Group 3 finding that the bind mounts carry source but not site-packages, so the unit must not run a stale image after a dependency change. The leading `-` makes a failed build non-fatal: the kiosk comes up on the last good image rather than not at all.
+- [x] Install/enable instructions in `deploy/README.md`, plus status/log commands, the stop-via-systemctl-not-compose note, and the `.env` and 127.0.0.1-binding notes. The user runs these on the Pi; **nothing was installed into systemd from here**.
 
-**Verify**: `sudo reboot` with no keyboard attached ⇒ both containers come up and `127.0.0.1:8080/api` answers. `docker kill` the backend ⇒ it comes back on its own.
+**Verify**: `docker compose config` resolves with both restart policies present, and `systemd-analyze verify` on the unit reports no warnings (both confirmed). The reboot / power-cut / `docker kill` checks are validation steps 20–22 and 25, run on the Pi by the user after installing the unit.
 
 ## 9. Browser kiosk session (3e) — *blocked on Group 8*
 

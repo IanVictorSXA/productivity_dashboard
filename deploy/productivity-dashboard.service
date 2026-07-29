@@ -1,0 +1,27 @@
+[Unit]
+Description=Productivity Dashboard (frontend + backend containers)
+# The containers cannot start before the Docker daemon exists, and a cold boot
+# after a power cut must not race the network stack.
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Compose reads docker-compose.yml and .env relative to this directory.
+# Change it if the repo lives somewhere else on the device.
+WorkingDirectory=/home/team/coding/productivity_dashboard
+# The ./backend and ./frontend bind mounts carry source but not installed
+# packages, so a dependency change needs a rebuilt image. The leading "-"
+# makes a failed build non-fatal: the dashboard still comes up on the last
+# good image rather than leaving the kiosk on a blank screen.
+ExecStartPre=-/usr/bin/docker compose build
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=10
+# The first build on a Pi can take several minutes; don't let systemd kill it.
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
