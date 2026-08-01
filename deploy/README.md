@@ -124,6 +124,18 @@ empty either way.
 - **Build cache**: now that builds only happen when you run one, a cold cache
   costs you ~80s while you are sitting in front of it, not a blank kiosk at
   boot. `docker builder prune` on your own schedule is fine.
+- **Container logs are capped** at 10MB × 3 files per service, set in
+  `docker-compose.yml`. Docker's `json-file` driver does not rotate by default,
+  and because `ExecStop` keeps the containers alive across restarts, nothing
+  else ever truncates those files — the old `down` behavior used to delete them
+  along with the container. Changing the `logging:` block needs a container
+  recreation to take effect, which any `systemctl restart` does once the compose
+  file has changed.
+- **What still grows, and what does not**: dangling images do *not* accumulate
+  here (the containerd snapshotter releases the old image when a rebuild
+  retags), the journal self-rotates at ~4GB, and the build cache is
+  BuildKit-GC'd. `docker system df` shows all four categories at once and is the
+  one command worth running if the disk looks fuller than expected.
 - **Environment**: compose reads `.env` from `WorkingDirectory`. The Sheets
   variables (`SHEETS_SYNC_ENABLED`, `SHEETS_KEY_FILE_HOST`,
   `SHEETS_SPREADSHEET_ID`, `SHEETS_TAB_NAME`) belong there — see `.env.example`

@@ -11,6 +11,14 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    # json-file defaults to no rotation at all. The containers are long-lived
+    # now (the unit stops them rather than removing them), so nothing else ever
+    # truncates these. 30MB ceiling per service.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   
   backend:
     build: ./backend
@@ -28,3 +36,10 @@ services:
       - SHEETS_SPREADSHEET_ID=${SHEETS_SPREADSHEET_ID:-}
       - SHEETS_TAB_NAME=${SHEETS_TAB_NAME:-Day}
     restart: unless-stopped
+    # See the frontend service: uvicorn logs a line per request and nothing
+    # rotates it otherwise.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
