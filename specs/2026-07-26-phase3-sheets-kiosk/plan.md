@@ -100,11 +100,11 @@ This is the diff described in `requirements.md` § Reconciliation. **Schema firs
 
 **Verify**: `docker compose config` resolves with both restart policies present, and `systemd-analyze verify` on the unit reports no warnings (both confirmed). The reboot / power-cut / `docker kill` checks are validation steps 20–22 and 25, run on the Pi by the user after installing the unit.
 
-## 8b. Get the build off the boot path, and slim the frontend image (3e follow-up)
+## 8b. Get the build off the boot path; make the frontend build smaller and reproducible (3e follow-up)
 
 Numbered `8b` rather than `12` so Groups 9–11, the validation step numbers, and the existing commit messages keep meaning what they say. Unblocked; do it before Group 11 so the docs close out against the final shape.
 
-Two changes, from what the first real run of the unit showed (4m51s to reach a listening container, and a 2.49GB frontend image):
+Three changes, from what the first real run of the unit showed (4m51s to reach a listening container, and a 2.49GB frontend image built from no lockfile):
 
 - **Drop `ExecStartPre` from `deploy/productivity-dashboard.service`.** The unit is the only reason the Pi ever rebuilds: BuildKit's cache is swept on a 60-day keep duration and a 5.588GiB reserved floor regardless of whether anything changed, and `docker compose build` re-runs a step whenever the cache record is missing — it does not treat the existing image as a cache source. So an untouched repo can still pay a full `FROM node:22` + `npm install` on a boot. Without the build, the Pi runs the image it has and boots in seconds, forever.
 - **Replace the stale-image guard the build was providing** — that failure (Group 3's `ModuleNotFoundError: No module named 'gspread'`) is real and must not come back silently:
@@ -114,9 +114,15 @@ Two changes, from what the first real run of the unit showed (4m51s to reach a l
   - **Prototyped 2026-08-01 and it works**: built clean with no `node-gyp` step, **1.22GB vs 2.49GB**, Vite 6.3.5 ready in 486ms, `/src/app/App.tsx` and the Tailwind CSS both transform and serve, no errors in the container log. The test image was removed afterward; the Dockerfile edit itself is still to do.
   - The three native binaries in the tree (`@rollup/rollup-linux-arm64-gnu`, `@tailwindcss/oxide-linux-arm64-gnu`, `lightningcss-linux-arm64-gnu`) are **prebuilt platform packages, downloaded not compiled**, which is why slim's missing toolchain doesn't matter. They are all `-gnu` builds, so **`node:22-alpine` is the base to avoid** — musl would break all three. Slim is Debian/glibc, same as the full image.
   - Note that switching bases is itself a one-time full rebuild, so do it at a keyboard, not before a reboot.
-  - Out of scope: `npm` vs the `pnpm` the tech stack names, and multi-stage builds. This group only changes the base image.
+- **Commit a lockfile and build from it.** `frontend/` has **no `package-lock.json` and no `pnpm-lock.yaml`**, so every build re-resolves the whole transitive tree from the registry. Direct dependencies are pinned to exact versions, but nothing beneath them is — which is both why builds are slow and why the image the Pi builds in October need not match the one it builds today. With the build leaving the boot path, an unpinned rebuild is no longer something to discover at 3am, but it is still the difference between a reproducible kiosk and a hopeful one.
+  - **Stay on `npm`** — the decision, not a default. `pnpm` (which `specs/tech-stack.md`, the README, `frontend/pnpm-workspace.yaml`, and the `pnpm.overrides` block in `package.json` all point at) is a real migration with a specific trap: `react` and `react-dom` are declared as **optional `peerDependencies`**, which npm installs anyway (18.3.1 is in the running container, confirmed) and pnpm does not install by default. That migration needs its own group and its own verification; it is not this one.
+  - Generate the lockfile **from the tree that currently works**, not a fresh resolution: `docker compose run --rm frontend npm install --package-lock-only` writes it straight to `frontend/` through the bind mount. Commit it.
+  - `frontend/dockerfile`: `RUN npm install` → `RUN npm ci`. The existing `COPY package*.json ./` already picks the lockfile up, and `frontend/.dockerignore` does not exclude it. `npm ci` fails loudly when the lockfile and `package.json` disagree — that is the point of it, and it is also the one way this change can bite, so the first build after the switch is the one to watch.
+  - **Verify React survived**: after the first `npm ci` image, confirm `react@18.3.1` is actually in `node_modules`. The optional-peer declaration means "npm installed it last time" is an observation, not a guarantee.
+  - Two known-inert oddities in `package.json`, deliberately **left alone** so a later reader doesn't think they were missed: the `pnpm.overrides` block (npm ignores it, so the `vite` override it declares does nothing today) and `"tsx": "^4.0.0"` sitting in `scripts` rather than `devDependencies`. Neither breaks anything; both belong to the pnpm decision above.
+  - Out of scope: multi-stage builds.
 
-**Verify**: `systemd-analyze verify` clean; `sudo systemctl restart productivity-dashboard.service` reaches a listening backend in seconds with no build in the journal. `docker compose build` after a `package.json` edit still produces a working frontend — dev server up, dashboard loads, no console errors, and `docker images` shows the image materially smaller. Then re-run kiosk validation steps 20–22 and 25 against the new unit, since the boot sequence changed.
+**Verify**: `systemd-analyze verify` clean; `sudo systemctl restart productivity-dashboard.service` reaches a listening backend in seconds with no build in the journal. `docker compose build` produces a working frontend from `npm ci` — dev server up, dashboard loads, `react@18.3.1` present, no console errors, and `docker images` shows the image materially smaller. Build twice and confirm the second is cache-fast. Then re-run kiosk validation steps 20–22 and 25 against the new unit, since the boot sequence changed.
 
 ## 9. Browser kiosk session (3e) — *blocked on Group 8*
 
