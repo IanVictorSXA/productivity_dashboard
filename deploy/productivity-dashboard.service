@@ -11,16 +11,29 @@ Type=simple
 # Compose reads docker-compose.yml and .env relative to this directory.
 # Change it if the repo lives somewhere else on the device.
 WorkingDirectory=/home/team/coding/productivity_dashboard
-# The ./backend and ./frontend bind mounts carry source but not installed
-# packages, so a dependency change needs a rebuilt image. The leading "-"
-# makes a failed build non-fatal: the dashboard still comes up on the last
-# good image rather than leaving the kiosk on a blank screen.
-ExecStartPre=-/usr/bin/docker compose build
+# Deliberately no build step here: BuildKit sweeps its cache on its own
+# schedule, and `docker compose build` re-runs a step whenever the cache record
+# is gone -- it does not treat the existing image as a cache source. So an
+# untouched repo could still pay a full `npm ci` on a boot. Boot runs the image
+# the device already has; rebuilding after a dependency change is a human step
+# (see deploy/README.md).
 ExecStart=/usr/bin/docker compose up
-ExecStop=/usr/bin/docker compose down
+# "stop", not "down". `down` removes the containers, which orphans the
+# anonymous /app/node_modules volume; the next `up` then has to copy ~65k files
+# out of the frontend image into a fresh volume, measured at 156-176s on this
+# Pi -- on every single boot, with nothing changed. "stop" keeps the containers,
+# so the volume is reused and boot is ~1s.
+#
+# The cost: compose carries an anonymous volume forward when it recreates a
+# container, so `docker compose build` alone will NOT reach a kept volume --
+# node_modules would stay stale. That is why the documented rebuild step is
+# `build && down -v && restart` and not just `build && restart`. See
+# deploy/README.md; do not "simplify" it back.
+ExecStop=/usr/bin/docker compose stop
 Restart=on-failure
 RestartSec=10
-# The first build on a Pi can take several minutes; don't let systemd kill it.
+# Starting from an existing image is quick, but a first-ever `up` on a device
+# with no image at all still has to build; don't let systemd kill it.
 TimeoutStartSec=0
 
 [Install]

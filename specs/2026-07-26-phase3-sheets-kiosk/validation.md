@@ -54,6 +54,8 @@ Then confirm two things before continuing:
 
 ## Manual walkthrough — kiosk autostart (3e)
 
+**Group 8b changed the boot sequence (2026-08-01), so steps 20–22 and 25 must be re-run against the new unit.** The unit no longer builds on boot, and `ExecStop` is now `docker compose stop` rather than `down`. Already confirmed on the Pi without a reboot: `systemctl restart` brings both services up in **4s** with no build and no container recreation (was 156–176s), and a daemon-restart proxy for a power cut brings the containers back in **4s** via `unless-stopped` alone. What still needs the real hardware event: an actual `sudo reboot`, an actual power cut, and `docker kill` against the new unit. See plan.md § 8b "What the measurements changed".
+
 20. `sudo reboot`, with no keyboard or mouse attached. Confirm the Pi reaches the full-screen dashboard unattended: the already-configured autologin still lands in the desktop session, both containers come up, and Chromium opens in kiosk mode with no address bar, tabs, cursor, or infobar.
 21. **Power-cut test**: pull power mid-session, restore it, touch nothing. Confirm the same end state as 20, and that the cards from before the cut are still there (local state survived).
 22. `docker kill` the backend container. Confirm it restarts on its own and the dashboard recovers without a manual page reload beyond what the frontend already does.

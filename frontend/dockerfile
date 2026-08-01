@@ -1,12 +1,17 @@
-FROM node:22
+# -slim, not -alpine: the three native deps (@rollup/rollup-linux-arm64-gnu,
+# @tailwindcss/oxide-linux-arm64-gnu, lightningcss-linux-arm64-gnu) are
+# prebuilt glibc binaries, so musl would break all three.
+FROM node:22-slim
 
 WORKDIR /app
 
-# Copy package files first to leverage Docker cache layers
+# Copy package files first to leverage Docker cache layers.
+# The wildcard picks up package-lock.json, which npm ci requires.
 COPY package*.json ./
 
-# Install all dependencies
-RUN npm install
+# ci, not install: builds exactly the committed lockfile, and fails loudly if
+# it and package.json disagree.
+RUN npm ci
 
 # Copy the rest of the application files
 COPY . .
