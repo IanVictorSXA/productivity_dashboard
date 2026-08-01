@@ -111,7 +111,8 @@ Two changes, from what the first real run of the unit showed (4m51s to reach a l
   - `deploy/README.md`: `docker compose build && sudo systemctl restart productivity-dashboard.service` becomes the documented step after **any** change to `backend/requirements.txt` or `frontend/package.json`, stated as a rule rather than a footnote.
   - Rewrite the cold-cache note added in `75108e6` — with the build gone from boot, the cache only matters to a build the user is already sitting in front of.
 - **`frontend/dockerfile`: `FROM node:22` → `node:22-slim`.** The full base is most of the 2.49GB.
-  - **Risk to check first**: `-slim` has no `python3`/`make`/`g++`, so any dependency needing `node-gyp` will fail to install where it silently succeeded before. Build it and read the `npm install` output before assuming it worked; if something does need to compile, either add the toolchain in a builder stage or drop the change — a smaller image is not worth a fragile one.
+  - **Prototyped 2026-08-01 and it works**: built clean with no `node-gyp` step, **1.22GB vs 2.49GB**, Vite 6.3.5 ready in 486ms, `/src/app/App.tsx` and the Tailwind CSS both transform and serve, no errors in the container log. The test image was removed afterward; the Dockerfile edit itself is still to do.
+  - The three native binaries in the tree (`@rollup/rollup-linux-arm64-gnu`, `@tailwindcss/oxide-linux-arm64-gnu`, `lightningcss-linux-arm64-gnu`) are **prebuilt platform packages, downloaded not compiled**, which is why slim's missing toolchain doesn't matter. They are all `-gnu` builds, so **`node:22-alpine` is the base to avoid** — musl would break all three. Slim is Debian/glibc, same as the full image.
   - Note that switching bases is itself a one-time full rebuild, so do it at a keyboard, not before a reboot.
   - Out of scope: `npm` vs the `pnpm` the tech stack names, and multi-stage builds. This group only changes the base image.
 
