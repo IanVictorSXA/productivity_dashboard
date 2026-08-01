@@ -49,8 +49,9 @@ sudo systemctl restart productivity-dashboard.service   # after pulling changes
 sudo systemctl stop productivity-dashboard.service      # stop the stack
 ```
 
-**After any change to `backend/requirements.txt`, `frontend/package.json`, or
-`frontend/package-lock.json`, rebuild like this — all three parts:**
+**After any change to `backend/requirements.in`, `backend/requirements.txt`,
+`frontend/package.json`, or `frontend/package-lock.json`, rebuild like this — all
+three parts:**
 
 ```bash
 docker compose build && docker compose down -v && sudo systemctl restart productivity-dashboard.service
@@ -79,6 +80,14 @@ that looks redundant and is not:
 - **`-v` also removes named volumes** declared in `docker-compose.yml`. There
   are none today — `productivity.db` is a bind-mounted file, not a volume — but
   if that ever changes, this command has to change with it.
+
+Both dependency lists are pinned and both are generated from a working
+environment, so a rebuild installs what the last verified one installed rather
+than whatever the registry offers today. **Never hand-edit
+`backend/requirements.txt`** — edit `backend/requirements.in` (the declared
+list), rebuild, run the tests and `python sheets.py --check` inside the new
+image, then regenerate the pinned file from it; the header in each file spells
+out the command.
 
 If you only edited source (`.py`, `.tsx`, …), none of this applies: the bind
 mounts and the dev servers' reloaders pick it up with no restart at all.

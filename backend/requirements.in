@@ -1,0 +1,23 @@
+# Declared (direct) backend dependencies. Hand-edited.
+#
+# requirements.txt is the fully-pinned, generated file the image installs from;
+# regenerate it from a working environment after changing anything here.
+# See specs/2026-07-26-phase3-sheets-kiosk/plan.md, Group 8c.
+#
+# Not listed, deliberately: pydantic (guaranteed by fastapi) and requests
+# (guaranteed by gspread) are imported directly but are not declared, since the
+# packages above cannot function without them.
+
+fastapi
+uvicorn
+tzlocal
+
+# pytest ships in the runtime image on purpose: README.md and AGENTS.md §3 both
+# document `pip install -r requirements.txt` as the way to get a test env.
+pytest
+
+# Sheets sync (Phase 3). google-auth is a direct import in sheets.py, not just
+# a gspread transitive. The OAuth user-consent path is a non-goal, so
+# google-auth-oauthlib is left to arrive transitively rather than declared.
+gspread
+google-auth

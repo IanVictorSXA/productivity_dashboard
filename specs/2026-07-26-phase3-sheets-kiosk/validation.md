@@ -24,6 +24,7 @@ Then confirm two things before continuing:
 1. **[x]** With the key file mounted and `SHEETS_SYNC_ENABLED=true`, run the standalone check from Group 3 (`python sheets.py --check`). Confirm it prints the service-account email and the spreadsheet's title.
    - **Done (Group 3, 2026-07-28)**, by the user via `docker compose run --rm backend python sheets.py --check` — the in-container run, so the compose mount and env wiring are proven, not just the credential. Printed the service-account email, `IAN'S REQUIÉM`, and `Day`.
    - Prerequisite discovered here: the backend image predated the Group 2 `requirements.txt` change, so the first run failed with `ModuleNotFoundError: No module named 'gspread'`. **`docker compose build backend` is required after any backend dependency change** — the `./backend:/app` bind mount carries source, not site-packages. Noted for the Group 8 systemd unit, which must not run a stale image.
+   - **Re-run 2026-08-01 after Group 8c's dependency trim** and passed identically (same service account, `IAN'S REQUIÉM`, `Day (1000 rows)`), from an image with `google-api-python-client` and its subtree removed — 9 fewer packages, 436MB → 308MB. `sheets.py` is the google stack's only consumer, so this run is what proves the trim stopped in the right place.
    - Also confirmed (config/auth failure half of section C, standalone rather than via app startup): unset `SHEETS_KEY_FILE`, wrong key path, `/dev/null` key, valid-JSON-but-not-a-service-account key, unset `SHEETS_SPREADSHEET_ID`, wrong spreadsheet id, and wrong tab name each print their own typed message and exit 1. Steps 11–18 still have to be re-run through the real app once the sync path exists.
 2. **[x]** Un-share the spreadsheet from the service account, re-run the check. Confirm it reports a 403 and names the service-account email to share with — not a raw traceback. Re-share before continuing.
    - **Done (Group 3, 2026-07-28)**: un-shared ⇒ `SheetsAccessError` with the "share it with `python-api@…`" hint, no traceback; re-shared ⇒ the check succeeds again. This was the last unexercised branch in `sheets.py`.
@@ -87,6 +88,7 @@ Run these on the touchscreen, tapping — not with a mouse on a desktop browser.
 - [ ] All of 3a–3f checked off in `specs/roadmap.md`.
 - [ ] Steps 1–38 above pass, with any intentional deviation documented in this file rather than silently accepted.
 - [ ] Existing 82 backend tests pass unmodified.
+- [x] **Both dependency trees are pinned and reproducible** (Groups 8b/8c): `frontend/package-lock.json` and `backend/requirements.txt` are committed and generated, `backend/requirements.in` holds the declared list, and a rebuild reproduces the pinned set exactly. Confirmed 2026-08-01.
 - [ ] **No credential material committed**: no JSON key, no `.env`, no spreadsheet id hardcoded in tracked source. Verify with `git log -p` over the branch before merging.
 - [ ] Read-only scope confirmed in code — nothing in this branch can write to the spreadsheet (Phase 7 owns the write path).
 - [ ] **No failure path can delete a card** (step 18 — the highest-risk check in the phase).
