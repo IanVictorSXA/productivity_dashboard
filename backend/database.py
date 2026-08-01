@@ -15,6 +15,29 @@ from contextlib import closing
 
 date_str_format = "%Y-%m-%d"
 
+date_id_filename = "date_id.txt"
+
+def _zone_from(line):
+    """Line 1 of `date_id.txt` is an IANA timezone name."""
+    return ZoneInfo(line.strip())
+
+def get_timezone():
+    """Return the app's configured timezone, falling back to the system's.
+
+    Same source of truth as the daily rollover below — line 1 of `date_id.txt`.
+    Unlike `Database.__init__`, this never raises: the Sheets sync calls it to
+    turn a sheet's wall-clock time into a timestamp, and a bad line there must
+    degrade to the system zone rather than take startup down with it.
+    """
+    try:
+        with open(date_id_filename, "r") as file:
+            return _zone_from(file.readline())
+    except Exception as error:
+        fallback = datetime.now().astimezone().tzinfo
+        print(f"could not read timezone from {date_id_filename} ({error}); using {fallback}")
+
+        return fallback
+
 def dict_factory(cursor, row):
     """sqlite3 row_factory that returns each row as a `{column_name: value}` dict."""
     fields = [column[0] for column in cursor.description]
@@ -88,10 +111,10 @@ class Database:
             con.commit()
 
         self.last_id = -1
-        self.filename = "date_id.txt"
+        self.filename = date_id_filename
         with open(self.filename, "r") as file:
             self.text = file.readlines()
-            tz = ZoneInfo(self.text[0].strip())
+            tz = _zone_from(self.text[0])
 
         if len(self.text) == 1:
             date = datetime.now(tz=tz).date()

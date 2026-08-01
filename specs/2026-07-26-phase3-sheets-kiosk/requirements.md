@@ -28,18 +28,36 @@ The user has an **existing spreadsheet** whose layout the backend reads as-is �
 - **Each cell is either an event or a task.** Nothing else — **timers and stopwatches are never imported** from Sheets.
 - The sheet is the **source of truth for the items it owns**: a cell removed from column A means the corresponding card is removed from the dashboard (see § Reconciliation).
 
-### Open input — collected at implementation time, not now (blocks Groups 4–5)
+### Cell grammar (Group 1 — asked and answered 2026-08-01, at the start of Group 4)
 
-Per the user: ask for these when the parsing work actually starts, rather than up front.
+Answered by the user and then checked against a read-only dump of the live column A (user-approved), so the rules below describe real cells, not a described format.
 
-- [ ] Spreadsheet ID or URL
-- [ ] 5–10 real sample cells, covering both events and tasks and any edge case (blank rows mid-column, trailing whitespace, a header cell in A1?)
-- [ ] **How a cell declares whether it is an event or a task** — a prefix/keyword, the presence of a time, something else?
-- [ ] For events: the **time format** inside the cell (`14:30`, `2:30 PM`, `9am`?) and how the label is separated from it
-- [ ] Whether A1 is a header/title cell to skip, or data like any other
-- [ ] Whether the `Day` tab is always "today" only, or holds other days that must be filtered out
+- **A1 is the user's wake-up time** (`645am`), not an item. It is skipped unconditionally — `sheets_parse.HEADER_ROWS = 1`. User's words: *"A1 is just the time I should wake up. Ignore it for now at least."*
+- **Events come first, in order, and start with the time they should ring** — *"1pm sun lunch"*. Everything after the time is the label; there is no separator character, just whitespace.
+- **A cell with no leading time is a task.** That is the whole discriminator.
+- **Blank cells appear mid-column** and are skipped without comment. Row numbers are preserved for logging, so a skip message names the sheet row the user can look at.
+- **The `Day` tab is today only.** No date filtering.
 
-Groups 1–3 and 8–9 (auth, config, kiosk) do not depend on any of this and can proceed immediately.
+Time forms, from the real cells plus the near neighbours the parser accepts:
+
+| Cell | Reads as | Ring time |
+| --- | --- | --- |
+| `1pm sun lunch` | event | 13:00 local |
+| `10pm plan, self check, reflect, read` | event | 22:00 local |
+| `645am` (A1) | — | skipped as the header row |
+| `6:45am gym` | event | 06:45 local |
+| `1230pm lunch` | event | 12:30 local |
+| `13:30 standup` | event | 13:30 local |
+| `bath, bed, timers 8h` | task | — |
+| `5, 10, 15 reps` | task | — |
+| `check email` | task | — |
+| `25pm broken` / `9:75am broken` / `3pm` | skipped | bad hour / bad minute / no label |
+
+**Bold is not used as the discriminator, deliberately.** The user noted events are also always bold, and a `includeGridData` fetch confirms it (A1–A3 bold, A4 onward not). The leading time alone already separates the two types on every real cell, so the parser stays on the cell *text*: text survives a copy-paste that drops formatting, needs no second API call, and keeps the grammar something the user can reason about by reading the sheet. If a bold-but-untimed event ever shows up, that is the moment to revisit this.
+
+**A leading time requires a meridiem or a colon** (`1pm`, `645am`, `13:30`) — a bare `1300` is not read as a time. This is what keeps a task like `bath, bed, timers 8h` or `5, 10, 15 reps` from being turned into an alarm, and it is the reason the discriminator is safe without the bold signal.
+
+**Wall-clock text is resolved against the app's configured timezone** — line 1 of `date_id.txt` (`America/Chicago`), the same source the daily rollover uses — and stored as UTC. `classes.parse_time` is *not* reused for this: it resolves against the process timezone, and the backend container runs UTC, which would have made `1pm` ring at 08:00 local. Cards created in the browser never exposed this, because the frontend sends an already-absolute ISO timestamp.
 
 ## Current state (confirmed by reading the code)
 
@@ -50,7 +68,7 @@ Groups 1–3 and 8–9 (auth, config, kiosk) do not depend on any of this and ca
 - Ids come from `db.last_id`, persisted to `date_id.txt` on every INSERT.
 - `deleteAll()` deletes *rows*, not tables, so schema changes persist across the daily rollover — and `CREATE TABLE IF NOT EXISTS` will **not** add a new column to an already-existing `events`/`tasks` table. **The user will delete the old `events`/`tasks` tables (or the whole `productivity.db`) by hand before running the new code**, so the new columns are declared in the `CREATE TABLE IF NOT EXISTS` statements only — no migration code is written (user-directed, see § Schema changes).
 - `Event.get_ApiEvent()` / `Task.get_ApiTask()` and the `get_tuple_to_save()` INSERTs enumerate columns explicitly, so a new column means touching both sides in `backend/classes.py`.
-- The backend's declared dependencies are `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google-auth`, in `backend/requirements.in`; `backend/requirements.txt` is the pinned file generated from a verified build of that list and is what the image installs (Group 8c — Group 2's wider install of `google-api-python-client` / `google-auth-httplib2` / `google-auth-oauthlib` was trimmed back, the first two being unimported and the third arriving transitively through `gspread` anyway). The service-account key JSON has been downloaded and placed under `backend/` (gitignored). `backend/sheets_config.py` (Group 2, complete) reads the four env vars from environment; `docker-compose.yml` passes them through and mounts the key file read-only. `backend/sheets.py` (Group 3, complete) holds the authenticated read-only client — `get_client()`, `open_worksheet()`, the `SheetsError` exception family, a 15-second request timeout, and a `python sheets.py --check` diagnostic. It is the only consumer of `sheets_config` so far, and **nothing imports it at runtime yet**: `main.py`/`classes.py` are untouched, so with sync disabled (and in the tests) the module is never loaded.
+- The backend's declared dependencies are `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google-auth`, in `backend/requirements.in`; `backend/requirements.txt` is the pinned file generated from a verified build of that list and is what the image installs (Group 8c — Group 2's wider install of `google-api-python-client` / `google-auth-httplib2` / `google-auth-oauthlib` was trimmed back, the first two being unimported and the third arriving transitively through `gspread` anyway). The service-account key JSON has been downloaded and placed under `backend/` (gitignored). `backend/sheets_config.py` (Group 2, complete) reads the four env vars from environment; `docker-compose.yml` passes them through and mounts the key file read-only. `backend/sheets.py` (Group 3, complete) holds the authenticated read-only client — `get_client()`, `open_worksheet()`, the `SheetsError` exception family, a 15-second request timeout, and a `python sheets.py --check` diagnostic. It is the only consumer of `sheets_config` so far, and **nothing imports it at runtime yet**: `main.py`/`classes.py` are untouched, so with sync disabled (and in the tests) the module is never loaded. `backend/sheets_parse.py` (Group 4, complete) holds the cell grammar as a pure function over a list of strings, plus the `SheetItem`/`SheetRead` shapes the reconciliation diff consumes; `sheets.read_day()` is the one-request column-A read that feeds it, and `python sheets.py --dump` prints the parse for eyeballing against the sheet. Group 4 also added `database.get_timezone()` (line 1 of `date_id.txt`, never raises) so a sheet's wall-clock time resolves in the user's zone rather than the container's UTC.
 - `docker-compose.yml` mounts `./backend:/app` and `./frontend:/app` and binds 5173/8080 to `127.0.0.1`. Both services now carry `restart: unless-stopped` (Group 8), and `deploy/productivity-dashboard.service` + `deploy/README.md` hold the systemd unit and its install instructions — **not yet installed on the Pi**; the user runs the install and the reboot/power-cut validation.
 
 ## Decisions

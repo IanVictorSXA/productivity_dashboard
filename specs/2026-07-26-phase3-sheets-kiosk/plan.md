@@ -4,24 +4,24 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–3, 8–8c and 9 are unblocked. Groups 4–7 are blocked on the sheet layout being supplied (Group 1), and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
+**Dependency note**: Groups 1–4, 8–8c and 9 are unblocked (1–4 and 8–8c are done). The sheet layout that blocked the parsing work was supplied on 2026-08-01, so Group 5 is now the next unblocked group; 6–7 follow it in order, and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
 
 ---
 
-## 1. Capture the cell format — **ask the user when Group 4 starts, not before** (blocks 4–5)
+## 1. Capture the cell format — **COMPLETE** (2026-08-01, at the start of Group 4 as intended)
 
 Not code, and deliberately deferred: the user asked to be questioned about the sheet's format at the moment the parsing work begins, so the answers are fresh and concrete rather than guessed at up front.
 
-Already confirmed (in `requirements.md` § Sheet shape): one tab named `Day`, one column (A), every non-empty cell is either an **event** or a **task**, and the sheet owns those cards (deletes propagate). Still to ask, via `AskUserQuestion` at the start of Group 4:
+Asked via `AskUserQuestion` before a line of Group 4 was written. The answers, and the one thing that changed the design:
 
-- Spreadsheet id/URL.
-- 5–10 real sample cells covering both types and any edge case.
-- **How a cell declares event vs. task** — prefix, keyword, presence of a time?
-- Event time format inside the cell, and how label and time are separated.
-- Whether A1 is a header/title to skip.
-- Whether the `Day` tab ever holds days other than today.
+- [x] Spreadsheet id — already known and verified in Group 3; not re-asked.
+- [x] Real sample cells — the user chose "dump column A read-only now" over pasting samples, so the grammar was written against the **actual 24 rows**, not a description of them. The dump also pulled `effectiveFormat/textFormat/bold` in the same request, which is how the bold question below got settled with data.
+- [x] **Event vs. task**: *"the rows always start with the events in order. They are always bold and they start with the time they should ring: `1pm sun lunch`."*
+- [x] **A1**: *"just the time I should wake up. Ignore it for now at least."* (`645am` — skipped.)
+- [x] **Other days**: today only, no date filtering.
+- [x] Time format: no separator, meridiem forms — `1pm`, `10pm`, `645am`.
 
-**Deliverable**: `requirements.md` § Sheet shape updated with the confirmed cell grammar and worked examples, replacing the open-input checklist. Nothing in Groups 4–5 gets written before this exists.
+**Deliverable met**: `requirements.md` § Sheet shape now carries the confirmed grammar, a worked-example table, and the two design notes that came out of the answers (why bold is *not* the discriminator, and why a leading time must carry a meridiem or a colon).
 
 ## 2. Dependencies and configuration plumbing (3a) — **COMPLETE**
 
@@ -44,19 +44,28 @@ New `backend/sheets.py`:
 
 **Verified**: against the real key and the real spreadsheet, `--check` prints `service account: python-api@…`, `spreadsheet: IAN'S REQUIÉM`, `tab: Day (1000 rows)`, `OK`. Failure paths walked one at a time — unset `SHEETS_KEY_FILE`, wrong path, `/dev/null`, valid JSON that isn't a service-account key, unset `SHEETS_SPREADSHEET_ID`, wrong spreadsheet id (404), wrong tab name (404) — each printing its typed message and exiting 1. The 403/unshared case is left for the manual walkthrough (validation step 2), since it needs the user to un-share the sheet. Existing 82 backend tests still pass, unmodified.
 
-## 4. Cell parsing (3b, 3c) — *blocked on Group 1*
+## 4. Cell parsing (3b, 3c) — **COMPLETE**
 
-Start by running the Group 1 questions. Then, in `backend/sheets.py` (or `sheets_parse.py`):
+Ran the Group 1 questions first, as specified. New `backend/sheets_parse.py` (separate module, not inside `sheets.py`: the grammar is then testable with no network, no key file, and no Google import, and it keeps Group 5's `sync_day` from having to share a file with the regex).
 
-- Read **column A of the `Day` tab** in one call (`col_values(1)` or equivalent), keeping each cell's row number for logging.
-- Skip blanks (and A1, if Group 1 says it's a header).
-- Classify each cell as **event** or **task** by the grammar Group 1 establishes, and parse out label + (for events) ring time. **Timers and stopwatches are never produced** — a cell that looks like a duration is still one of the two types or is skipped.
-- Reuse `parse_time` / `parse_datetime` / `parse_iso_datetime` from `backend/classes.py` where the formats line up; add conversion only for formats the sheet uses that those don't handle.
-- Return both the parsed items **and** whether the read itself succeeded — Group 5's diff must be able to tell "no items today" from "couldn't read the sheet."
-- Per-cell failures are collected and skipped, never raised.
+- [x] `sheets.read_day(worksheet=None)` reads column A in **one** `col_values(1)` call, so the items are a snapshot of a single moment rather than a walk down a sheet that may be edited mid-read. Row numbers are the list index, preserved into every item and every skip message.
+- [x] Blanks skipped silently; A1 skipped via `HEADER_ROWS = 1`.
+- [x] Classification by the Group 1 grammar: a leading clock time ⇒ **event** (label is the remainder), anything else non-empty ⇒ **task**. **No timer or stopwatch can be produced** — `SheetItem.type` is only ever `"event"` or `"task"`, and a cell like `bath, bed, timers 8h` parses as a task.
+- [x] Returns `SheetRead(ok, items, skipped, error)` — `ok` is exactly the "could the sheet be read at all" flag Group 5's diff needs, and **every** failure path returns `ok=False` with an empty `items`, so a failure can never be mistaken for an empty column.
+- [x] Per-cell failures collected into `skipped` with the row number and a reason, logged at WARNING, never raised.
+- [x] `python sheets.py --dump` prints the parse for reading against the sheet, alongside Group 3's `--check`.
 
-**Verify**: parsing runs against the real sheet and the printed items match what a human reads down column A, including a deliberately malformed cell being skipped with its row number logged.
+**Deviation from the plan, and the bug it caught**: the plan said to reuse `parse_time`/`parse_datetime`/`parse_iso_datetime` from `classes.py` "where the formats line up". They don't. `parse_time` resolves a wall-clock string against the **process** timezone, and the backend container runs **UTC** while the app's configured zone is **`America/Chicago`** — so reusing it would have made `1pm sun lunch` ring at 08:00 local, five hours early. This never surfaced before because every card the frontend creates carries an already-absolute ISO timestamp computed in the browser; a spreadsheet is the first source of bare wall-clock text. Fixed by adding `database.get_timezone()` (line 1 of `date_id.txt` — the same source the daily rollover already reads, refactored to one `_zone_from` helper so there is still exactly one place that knows what line 1 means) and resolving against that. `get_timezone()` deliberately **never raises**, falling back to the system zone with a printed note, since Group 6 requires that no sync failure can take startup down.
 
+**Verified 2026-08-01**:
+
+- `python sheets.py --dump` against the real spreadsheet ⇒ **15 items, 0 skipped**, matching a human read of column A row for row: `A2 event 'sun lunch' @ 18:00Z` (13:00 CDT), `A3 event 'plan, self check, reflect, read' @ 03:00Z next day` (22:00 CDT), 13 tasks at A4–A24, A1 and every blank skipped.
+- Timezone correctness checked explicitly by converting each parsed `ring_time` back to `America/Chicago` — every event lands on the wall-clock time written in its cell.
+- Malformed cells and the failed-read paths were exercised **without editing the user's live sheet**: the grammar over synthetic cells (`25pm broken` ⇒ bad hour, `9:75am broken` ⇒ bad minute, `3pm` ⇒ no label, each skipped with its row logged and the surrounding cells still parsed), and `read_day` against a stub worksheet raising a network error and APIError 403/404/500 — all four return `ok=False`, `items=[]`, and a typed message.
+- Boundary forms confirmed: `12am` ⇒ 00:00, `12pm` ⇒ 12:00, `645am` ⇒ 06:45, `1230pm` ⇒ 12:30, `13:30` ⇒ 13:30. Non-times confirmed to stay tasks: `bath, bed, timers 8h`, `5, 10, 15 reps`, a cell starting with a URL.
+- **82 backend tests pass, unmodified** (`database.py` was touched, so this is the check that mattered), `sheets.py --check` still passes against the real sheet, and the backend restarts clean with `GET /api` ⇒ 200 and no tracebacks.
+
+**Left for Group 5, noted here so it isn't rediscovered**: an event whose ring time has already passed when the sync runs (a 06:45 event synced at 09:00) will be created in the past and ring immediately. Group 4 parses the cell faithfully; whether Group 5 creates such an event, skips it, or creates it pre-dismissed is a card-creation decision and needs the user's call.
 ## 5. Reconcile into the dashboard (3b, 3c) — *blocked on Group 4*
 
 This is the diff described in `requirements.md` § Reconciliation. **Schema first, then the diff.**

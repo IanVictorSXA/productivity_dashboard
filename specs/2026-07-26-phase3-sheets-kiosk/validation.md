@@ -31,6 +31,21 @@ Then confirm two things before continuing:
 3. **[x]** Confirm `git status` shows no key file and no `.env` as untracked-but-addable content — i.e. `.gitignore` covers them.
    - **Done (2026-07-28)**: `.env.example` is the only credential-adjacent tracked file; neither the key JSON nor `.env` appears as untracked-addable.
 
+### A2. Cell parsing (3b, 3c) — Group 4, before any card is created
+
+These run through `python sheets.py --dump` rather than the dashboard, because nothing imports the parser at runtime until Group 5. They are the evidence that the cards section B is about to compare are being *read* correctly in the first place.
+
+3a. **[x]** `docker compose exec backend python sheets.py --dump` against the real spreadsheet ⇒ the printed items match a human read of column A, row for row.
+   - **Done (Group 4, 2026-08-01)**: **15 items, 0 skipped** from 24 rows. Two events — `A2 event 'sun lunch'`, `A3 event 'plan, self check, reflect, read'` — and 13 tasks at A4–A24. A1 (`645am`, the wake-up time) and all seven blank cells skipped. Row numbers in the output line up with the sheet.
+3b. **[x]** Event ring times land on the wall-clock time written in the cell, in the **user's** timezone.
+   - **Done (2026-08-01)**, and this is the check that caught a real bug: the container runs UTC while `date_id.txt` says `America/Chicago`, so the obvious reuse of `classes.parse_time` would have rung `1pm sun lunch` at 08:00 local. Converting each parsed `ring_time` back to `America/Chicago` now gives 13:00 and 22:00 CDT — the times in the cells. See plan.md Group 4 for the fix (`database.get_timezone()`).
+3c. **[x]** A malformed cell is skipped with its row number logged, and its neighbours still parse.
+   - **Done (2026-08-01)** against **synthetic** cells, not the live sheet — deliberately, so the user's real spreadsheet was never edited to manufacture a failure: `25pm broken` (bad hour), `9:75am broken` (bad minute), `3pm` (time with no label) each skipped with `A<row>` and a reason at WARNING, with the cells above and below still parsed. Step 9 below re-runs this end-to-end through the app once Group 5 exists.
+3d. **[x]** A failed read returns "could not read", never "the column is empty".
+   - **Done (2026-08-01)** with a stub worksheet raising a network error and `APIError` 403/404/500 — all four give `ok=False`, `items=[]`, and a typed message naming the fix. This is the Group 4 half of the phase's highest-risk property (merge bar: "no failure path can delete a card"); the other half is step 18, once the diff exists.
+3e. **[x]** No cell can produce a timer or a stopwatch.
+   - **Done (2026-08-01)**: `SheetItem.type` is only ever `"event"` or `"task"`. Confirmed against the duration-looking real cell `bath, bed, timers 8h` and the digit-leading `5, 10, 15 reps`, both of which parse as plain tasks.
+
 ### B. Start-of-day sync (3b, 3c)
 
 4. Set `date_id.txt`'s date line to yesterday and restart the backend. Confirm: yesterday's cards are wiped by the existing rollover, **and** the events and tasks from column A of the `Day` tab appear on the dashboard.
@@ -84,7 +99,7 @@ Run these on the touchscreen, tapping — not with a mouse on a desktop browser.
 
 ## Merge bar
 
-- [ ] Cell grammar captured in `requirements.md` § Sheet shape (Group 1, asked at the start of Group 4) — the spec no longer contains the open-input checklist.
+- [x] Cell grammar captured in `requirements.md` § Sheet shape (Group 1, asked at the start of Group 4) — the spec no longer contains the open-input checklist. **Done 2026-08-01**: questions asked before any Group 4 code, answers written up as a grammar plus a worked-example table, both checked against a read-only dump of the real column A.
 - [ ] All of 3a–3f checked off in `specs/roadmap.md`.
 - [ ] Steps 1–38 above pass, with any intentional deviation documented in this file rather than silently accepted.
 - [ ] Existing 82 backend tests pass unmodified.
