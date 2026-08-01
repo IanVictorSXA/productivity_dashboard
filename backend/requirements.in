@@ -12,7 +12,7 @@ fastapi
 uvicorn
 tzlocal
 
-# pytest ships in the runtime image on purpose: README.md and AGENTS.md §3 both
+# pytest ships in the runtime image on purpose: README.md and CLAUDE.md §3 both
 # document `pip install -r requirements.txt` as the way to get a test env.
 pytest
 
