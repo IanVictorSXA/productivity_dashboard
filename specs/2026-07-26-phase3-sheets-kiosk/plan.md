@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–3, 8–8b and 9 are unblocked. Groups 4–7 are blocked on the sheet layout being supplied (Group 1), and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Group 8b tunes what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence.
+**Dependency note**: Groups 1–3, 8–8c and 9 are unblocked. Groups 4–7 are blocked on the sheet layout being supplied (Group 1), and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
 
 ---
 
@@ -123,6 +123,31 @@ Three changes, from what the first real run of the unit showed (4m51s to reach a
   - Out of scope: multi-stage builds.
 
 **Verify**: `systemd-analyze verify` clean; `sudo systemctl restart productivity-dashboard.service` reaches a listening backend in seconds with no build in the journal. `docker compose build` produces a working frontend from `npm ci` — dev server up, dashboard loads, `react@18.3.1` present, no console errors, and `docker images` shows the image materially smaller. Build twice and confirm the second is cache-fast. Then re-run kiosk validation steps 20–22 and 25 against the new unit, since the boot sequence changed.
+
+## 8c. Backend dependencies — trim, then pin
+
+The backend half of what Group 8b does for the frontend. Separate group because it is a different language, a different failure mode, and it wants its own verification pass against the real spreadsheet. **Order matters: trim first, then pin** — pinning first would carefully lock the versions of packages that are about to be deleted.
+
+### Trim (measured, not guessed)
+
+`backend/requirements.txt` declares eight packages. Grepping every import in `backend/*.py` and `backend/tests/*.py` shows three of them are never imported, and `pip show` confirms `gspread` does not require two of them:
+
+- **Drop `google-api-python-client`.** Nothing imports `googleapiclient`, and `gspread` requires only `google-auth` and `google-auth-oauthlib`. It is **100MB of the 185MB site-packages** — the bundled API discovery documents — so the backend image should drop from 436MB to roughly 335MB. This is the whole win; the rest is tidiness.
+- **Drop `google-auth-httplib2`.** It exists only to bridge `google-auth` to the API client above. Nothing imports it. Takes `httplib2`, `uritemplate`, `protobuf` and `googleapis-common-protos` (~2.6MB) with it.
+- **Drop `google-auth-oauthlib` from the declared list.** It is the OAuth user-consent path this phase explicitly rejects in favour of a service account (`requirements.md` § Non-goals). `gspread` requires it, so it stays installed transitively either way — removing the declaration is about the list telling the truth, not about size.
+- **Add `google-auth`.** `backend/sheets.py` imports `google.oauth2.service_account` and `google.auth.exceptions` directly, so it is a real direct dependency that today is only present because `gspread` happens to pull it in.
+
+Net declared list: `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google-auth`. That is exactly the "`gspread` + `google-auth`" that Group 2 planned before the install went wide — see the "superset of the planned" wording in Group 2 above, which this restores.
+
+### Pin
+
+- Split `backend/requirements.in` (the six names above, hand-edited) from `backend/requirements.txt` (fully pinned, generated, committed). `backend/dockerfile` keeps `pip install --no-cache-dir -r requirements.txt` unchanged — **no new tool in the image**, and the README's host instructions keep working verbatim.
+- Generate the pinned file **after** the trim and **from a tree that works**: rebuild the backend against the trimmed `.in`, run the test suite and `sheets.py --check`, then freeze that environment. `uv pip compile requirements.in -o requirements.txt` is the better generator if you want it (it resolves from the declared list and annotates which dependency pulled what, rather than snapshotting whatever drifted into the container) — but it runs on your machine, never in the image, so it is a preference, not part of the deliverable.
+- Today's known-good versions, for reference if a pin ever has to be reconstructed: Python 3.11.15, `fastapi==0.140.13`, `starlette==1.3.1`, `pydantic==2.13.4`, `uvicorn==0.51.0`, `tzlocal==5.4.4`, `gspread==6.2.1`, `google-auth==2.56.2`, `pytest==9.1.1` — 47 packages resolved from 8 declared names.
+- **`pytest` stays in the runtime image** for now. It is a test dependency shipping to production, but `README.md` and AGENTS.md §3 both document `pip install -r requirements.txt` as the way to get a test environment, and splitting `requirements-dev.txt` changes a documented workflow for a few MB. Noted here as a deliberate choice, not an oversight.
+- `pydantic` is imported directly in `backend/classes.py` but left undeclared, as `fastapi` guarantees it. Called out so the omission reads as intentional.
+
+**Verify**: the trimmed image builds; the 82 backend tests pass; **`python sheets.py --check` still authenticates and reads the real spreadsheet** — the google stack has no other consumer, so this is the check that the trim went too far or didn't; the dashboard boots and cards work. `docker images` shows the backend image ~100MB smaller. Diff `pip freeze` before and after and confirm every removed package is one of the four expected (`google-api-python-client`, `google-auth-httplib2`, `httplib2`, `uritemplate`, plus `protobuf`/`googleapis-common-protos`) and nothing else went with them. Build twice; the second should be cache-fast.
 
 ## 9. Browser kiosk session (3e) — *blocked on Group 8*
 
