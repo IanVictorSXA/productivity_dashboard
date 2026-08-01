@@ -2,7 +2,7 @@
 
 ## Automated
 
-None added — per `requirements.md` (standing guidance in AGENTS.md §1; user confirmed manual-only validation for this spec, since the real credentials, the real spreadsheet, and the Pi hardware all live on the device).
+None added — per `requirements.md` (standing guidance in CLAUDE.md §1; user confirmed manual-only validation for this spec, since the real credentials, the real spreadsheet, and the Pi hardware all live on the device).
 
 - [ ] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**. Phase 3 adds a new startup step; this proves it didn't disturb the existing card/rollover behavior. With `SHEETS_SYNC_ENABLED` unset (the test default), the import path must not run at all during tests.
 
@@ -96,7 +96,7 @@ Run these on the touchscreen, tapping — not with a mouse on a desktop browser.
 - [ ] A Sheets failure never blocks startup or loses local cards (steps 11–19 all pass).
 - [ ] `source`/`sheet_key` are declared in `CREATE TABLE IF NOT EXISTS` only — **no `ALTER TABLE` or `PRAGMA` migration code anywhere in the branch** — and the required table drop is documented in the README and the Group 5 commit message (§ Prerequisite).
 - [ ] Provenance survives a backend restart (step 10).
-- [ ] `AGENTS.md` updated with Phase 3 status and Phase 4 as next.
+- [ ] `CLAUDE.md` updated with Phase 3 status and Phase 4 as next.
 - [ ] README documents credential setup, the `Day`/column-A contract, the sheet-owns-its-cards rule, and points to `deploy/README.md` for kiosk install.
 - [ ] Manual sync is idempotent (step 31) and never rewrites a matched card's state (step 33).
 - [ ] The sync button is the only new UI in the phase, built with Radix/shadcn — no new MUI usage introduced (tech-stack rule).

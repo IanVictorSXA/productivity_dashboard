@@ -139,7 +139,7 @@ The controlling rule: **a Sheets failure must never degrade the local dashboard.
 
 ### Testing
 
-- **No automated tests are added** — per standing guidance (AGENTS.md §1) and user confirmation for this spec. The existing backend test suite must still pass unmodified; validation is the manual walkthrough in `validation.md`, run on the Pi against the real sheet.
+- **No automated tests are added** — per standing guidance (CLAUDE.md §1) and user confirmation for this spec. The existing backend test suite must still pass unmodified; validation is the manual walkthrough in `validation.md`, run on the Pi against the real sheet.
 
 ## Non-goals
 

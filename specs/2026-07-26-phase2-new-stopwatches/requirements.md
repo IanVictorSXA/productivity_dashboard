@@ -29,7 +29,7 @@ All three stopwatches (Exercise, Shower, Fun) in this one branch/spec — decide
 
 - **Implementation is additive to `MUTEX_LABELS` only.** Add `"Exercise"`, `"Shower"`, `"Fun"` to the existing array. No new component, no new message type, no new DB column — reuses the exact mechanism Work/Misc/Waste already use.
 - **UI layout**: keep the current layout as-is (flex-wrap grid). No redesign for 6 cards — confirmed with the user that minimal-scope, mission-aligned change is preferred over a touchscreen layout overhaul. If 6 cards visibly crowd the touchscreen during manual validation, that's a follow-up, not blocking this phase.
-- **Testing**: no automated tests added for this feature, per standing project guidance (AGENTS.md §1, §3: tests are only added when explicitly requested) and explicit user confirmation for this spec. Validation is manual only (see `validation.md`).
+- **Testing**: no automated tests added for this feature, per standing project guidance (CLAUDE.md §1, §3: tests are only added when explicitly requested) and explicit user confirmation for this spec. Validation is manual only (see `validation.md`).
 - **Naming**: use exactly "Exercise", "Shower", "Fun" (roadmap's current wording) as the stopwatch labels — matching the capitalization convention of "Work", "Misc", "Waste".
 - **Order**: new stopwatches are appended after the existing three in `MUTEX_LABELS`, so Work/Misc/Waste keep their existing left-to-right card order and Exercise/Shower/Fun appear after them (in that order) both in the boot-creation loop and in card layout (cards render in `durations` state order, which follows creation order).
 
