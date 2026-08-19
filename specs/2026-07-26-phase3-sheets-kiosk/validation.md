@@ -5,6 +5,7 @@
 None added — per `requirements.md` (standing guidance in CLAUDE.md §1; user confirmed manual-only validation for this spec, since the real credentials, the real spreadsheet, and the Pi hardware all live on the device).
 
 - [x] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**.
+  - **Confirmed again after Group 7 (2026-08-18)**: 82 passed, unmodified. Group 7 changes the `GET /api` response shape, so this is the check that no existing test asserted on its exact key set.
   - **Confirmed again after Group 6 (2026-08-18)**: 82 passed, unmodified, in the container. Group 6 touches `main.py` (a `logging.basicConfig` call) and `classes.py` (the outer sync guard), so this is the check that the guard did not change any card behavior.
   - **Confirmed after Group 5 (2026-08-18)**: 82 passed, run in the container. Group 5 is the change this check exists for — it adds a startup step and two columns to `events`/`tasks` — and it disturbed nothing. `SHEETS_SYNC_ENABLED` is unset in the test environment, and `TaskManager.sync_sheets()` checks that flag *before* importing `sheets`, so the suite never loads `gspread` or reaches the network. Phase 3 adds a new startup step; this proves it didn't disturb the existing card/rollover behavior. With `SHEETS_SYNC_ENABLED` unset (the test default), the import path must not run at all during tests.
 
@@ -97,6 +98,7 @@ Same shape as A3, and for the same reason: steps 11–18 need the Pi and the rea
 17. `Day` tab renamed/missing ⇒ logged naming the tab, app starts normally.
 18. **The deletion guard**: with sheet-origin cards on the dashboard, re-run steps 12–17 one at a time and confirm after each that **every sheet-origin card is still present**. A failed read must never be mistaken for an emptied column A. This is the single most important check in the phase — a bug here silently destroys the day's agenda.
 19. `GET /api` returns the `sheet_sync` object with a sensible status in both a success case and one failure case; the frontend renders normally and the browser console shows no error from the extra field.
+    - **Off-device half done (Group 7, 2026-08-18)**, in the same harness: the field is present and correct for `disabled`, for all six failure causes (`error`, carrying the typed message), for a successful run, and for a same-day restart — which still reports today's counts rather than just the word "skipped". The response's key set is exactly the four originals plus `sheet_sync`. On the **live** backend, `GET /api` ⇒ 200 with `"sheet_sync": {"date": null, "status": "disabled", "detail": "SHEETS_SYNC_ENABLED is false"}`, which is the correct dev-machine state. `App.tsx` types the response structurally and never validates it at runtime, so the extra key cannot throw — but the console half still wants a real browser, which is what remains of this step alongside the success/failure cases over the real sheet.
 
 ## Manual walkthrough — kiosk autostart (3e)
 

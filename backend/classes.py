@@ -418,11 +418,27 @@ class TaskManager:
         self.durations : list[Duration] = []
 
         self.db = Database()
+        # Last sync outcome, published on `GET /api`; filled in by the call below.
+        self.sheet_sync : dict | None = None
         self.retrieve_data()
         self.sync_sheets()
 
     def sync_sheets(self, force : bool = False):
+        """Run the sheet sync and record its outcome on `self.sheet_sync`.
+
+        Every entry point goes through here — startup, and the manual button in
+        3f — so the status `get_ApiState()` publishes is always the last attempt,
+        without any caller having to remember to update it.
+        """
+        self.sheet_sync = self._run_sheet_sync(force)
+
+        return self.sheet_sync
+
+    def _run_sheet_sync(self, force : bool):
         """Import today's column A from Google Sheets, if sync is switched on.
+
+        Returns a `{date, status, detail}` dict, where `status` is one of
+        `disabled`, `ok`, `skipped` (already synced today) or `error`.
 
         Both the config check and the import are deferred to call time on
         purpose: with `SHEETS_SYNC_ENABLED` false — every dev machine and the
@@ -441,7 +457,10 @@ class TaskManager:
             import sheets_config
 
             if not sheets_config.SHEETS_SYNC_ENABLED:
-                return None
+                # Reported rather than left blank: it is how the frontend knows to
+                # hide the manual sync button instead of showing a dead one (3f).
+                return {"date": None, "status": "disabled",
+                        "detail": "SHEETS_SYNC_ENABLED is false"}
 
             import sheets
 
@@ -490,7 +509,13 @@ class TaskManager:
             self.db.execute(command, arguments)
 
     def get_ApiState(self):
-        """Build the full `GET /api` response: every non-deleted card, plus the last-used id."""
+        """Build the full `GET /api` response: every non-deleted card, the last-used id, and the sync status.
+
+        `sheet_sync` is `{date, status, detail}` for the most recent sync
+        attempt, so a failure is diagnosable from the dashboard's own API rather
+        than by SSH-ing into the Pi to read the log. No frontend reads it yet;
+        the manual sync button (3f) is its first consumer.
+        """
         events = []
         durations = []
         tasks = []
@@ -508,7 +533,8 @@ class TaskManager:
             last_id = self.db.last_id,
             events=events,
             durations=durations,
-            tasks=tasks
+            tasks=tasks,
+            sheet_sync=self.sheet_sync
         )
 
     def retrieve_data(self):

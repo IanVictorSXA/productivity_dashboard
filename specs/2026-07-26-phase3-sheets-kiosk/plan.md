@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–6, 8–8c and 9 are unblocked (1–6 and 8–8c are done). Group 6 landed on 2026-08-18, so **Group 7 (sync status on the API) is now the next unblocked group**; Group 10 is blocked on 7 alone. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
+**Dependency note**: Groups 1–7 and 8–8c are done. **Group 9 (the Chromium kiosk session) and Group 10 (the manual sync button) are both unblocked**, and Group 11 (docs) closes the phase out after them. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
 
 ---
 
@@ -128,12 +128,23 @@ This is the diff described in `requirements.md` § Reconciliation. **Schema firs
 
 **Still owed on the Pi** (validation steps 11–18): the matrix walked against the real sheet by breaking one thing at a time — rename the key file, wrong spreadsheet id, unshare the sheet, pull the network — confirming each time that the dashboard boots with local cards intact, **nothing was deleted**, and the log names the cause.
 
-## 7. Sync status on the API (3d) — *unblocked; next*
+## 7. Sync status on the API (3d) — **COMPLETE** (2026-08-18)
 
-- Add a `sheet_sync` object (`date`, `status`, `detail`) to `TaskManager.get_ApiState()`'s response.
-- No frontend change — the field exists for a later phase to render.
+- [x] `TaskManager.get_ApiState()` returns a `sheet_sync` object — `{date, status, detail}` — alongside `last_id`/`events`/`durations`/`tasks`.
+- [x] **The source is the last attempt, held in memory** (`self.sheet_sync`), not a read of the marker table. The two differ in exactly the cases that matter: a failure the marker never received (`import sheets` failing, `get_date()` failing, the marker write itself failing) still reaches the API, and so does the "sync is switched off" case, which was never going to have a row.
+- [x] **One recorder, so no caller can forget.** `sync_sheets()` is now a thin wrapper that stores what `_run_sheet_sync()` returns; startup and Group 10's manual command both go through it, so the published status is always the most recent attempt without either call site remembering to update anything.
+- [x] Four statuses: `disabled`, `ok`, `skipped` (already synced today), `error`.
+- [x] **`disabled` is reported rather than left blank** — a small addition beyond the plan's wording, and the reason is Group 10: the button has to be hidden when `SHEETS_SYNC_ENABLED` is false, and this field is the only channel that tells the frontend so. `_run_sheet_sync()` now returns that status where it previously returned `None`.
+- [x] **The `skipped` detail carries the earlier run's counts through** (`already synced today — created 1, deleted 1, past 0, unparsed 0`). Without this, every same-day restart would replace the day's real outcome with the word "skipped", which is the state the Pi is in for most of any given day.
+- [x] No frontend change, per the plan. `App.tsx` types the response structurally and never validates it at runtime, so the extra key is ignored; `ApiState` gains the field in Group 10, when something reads it.
 
-**Verify**: `GET /api` returns the field in both the success and failure cases; the frontend ignores the extra key without error.
+**Verified 2026-08-18**:
+
+- **Live**: the running backend restarts clean and `GET /api` ⇒ 200 with `"sheet_sync": {"date": null, "status": "disabled", "detail": "SHEETS_SYNC_ENABLED is false"}` — the real dev-machine state — and the other four keys unchanged.
+- **Off-device harness, now 43 checks**: the field is present and correct for `disabled`, for all six failure causes (`error`, with the typed message), for a successful run, and for a same-day restart, which still reports today's counts. The response's key set is exactly the four originals plus `sheet_sync`.
+- **82 backend tests pass, unmodified.**
+
+**Still owed on the Pi** (validation step 19): confirm the field over the real sheet in a success *and* a failure case, and that the dashboard renders normally with the browser console clean.
 
 ## 8. Services start on boot (3e) — **COMPLETE**
 
@@ -240,7 +251,7 @@ Net declared list: `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google
 
 **Verify**: pull the power, plug it back in, touch nothing ⇒ the Pi lands on the full-screen dashboard with no cursor, no chrome, no login prompt. Kill Chromium ⇒ it relaunches.
 
-## 10. Manual sync button (3f) — *blocked on Groups 5–7*
+## 10. Manual sync button (3f) — *unblocked (5–7 are done)*
 
 The only frontend work in the phase. Backend first, then UI.
 

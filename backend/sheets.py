@@ -340,8 +340,11 @@ def _reconcile(task_manager, date: str, force: bool) -> dict:
         marker = task_manager.db.get_sheet_sync(date)
         if marker is not None and marker["status"] == "ok":
             logger.info("Sheets: %s already synced (%s), skipping", date, marker["detail"])
-
-            return {"date": date, "status": "skipped", "detail": "already synced today"}
+            # Carries the earlier run's counts through, so a same-day restart
+            # still publishes what today's sync actually did (3d) rather than
+            # only that it was skipped.
+            return {"date": date, "status": "skipped",
+                    "detail": f"already synced today — {marker['detail']}"}
 
     read = read_day()
 
