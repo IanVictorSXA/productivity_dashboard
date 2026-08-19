@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–4, 8–8c and 9 are unblocked (1–4 and 8–8c are done). The sheet layout that blocked the parsing work was supplied on 2026-08-01, so Group 5 is now the next unblocked group; 6–7 follow it in order, and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
+**Dependency note**: Groups 1–5, 8–8c and 9 are unblocked (1–5 and 8–8c are done). The sheet layout that blocked the parsing work was supplied on 2026-08-01 and Group 5 landed on 2026-08-18, so **Group 6 (failure paths) is now the next unblocked group**; 7 follows it, and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
 
 ---
 
@@ -65,24 +65,43 @@ Ran the Group 1 questions first, as specified. New `backend/sheets_parse.py` (se
 - Boundary forms confirmed: `12am` ⇒ 00:00, `12pm` ⇒ 12:00, `645am` ⇒ 06:45, `1230pm` ⇒ 12:30, `13:30` ⇒ 13:30. Non-times confirmed to stay tasks: `bath, bed, timers 8h`, `5, 10, 15 reps`, a cell starting with a URL.
 - **82 backend tests pass, unmodified** (`database.py` was touched, so this is the check that mattered), `sheets.py --check` still passes against the real sheet, and the backend restarts clean with `GET /api` ⇒ 200 and no tracebacks.
 
-**Left for Group 5, noted here so it isn't rediscovered**: an event whose ring time has already passed when the sync runs (a 06:45 event synced at 09:00) will be created in the past and ring immediately. Group 4 parses the cell faithfully; whether Group 5 creates such an event, skips it, or creates it pre-dismissed is a card-creation decision and needs the user's call.
-## 5. Reconcile into the dashboard (3b, 3c) — *blocked on Group 4*
+**Raised here, decided for Group 5 (2026-08-01)**: an event whose ring time has already passed when the sync runs (a 06:45 event synced at 09:00) would be created in the past and ring immediately. The user's call is to **skip it** — see Group 5's diff bullet and `requirements.md` § Import behavior. Group 4 needs no change for this: the parser keeps turning the cell into a timestamp and saying nothing about whether that moment has passed, which is what makes `--dump` give the same answer at any hour of the day.
+## 5. Reconcile into the dashboard (3b, 3c) — **COMPLETE** (2026-08-18)
 
 This is the diff described in `requirements.md` § Reconciliation. **Schema first, then the diff.**
 
-- **Schema**: add `source TEXT DEFAULT 'local'` and `sheet_key TEXT` to the `events` and `tasks` `CREATE TABLE IF NOT EXISTS` statements in `Database.__init__` (`backend/database.py:43` and `:53`). **No migration code** — no `ALTER TABLE`, no `PRAGMA table_info`. The user drops the old tables on the Pi by hand, so `CREATE TABLE IF NOT EXISTS` builds them fresh with the new shape. Flag in the commit message and in the README that this upgrade requires dropping `events` and `tasks` (or deleting `productivity.db`) first. Carry both fields through `Message`, the `Task`/`Event` constructors, `get_tuple_to_save()`, and `get_ApiTask()`/`get_ApiEvent()`, so provenance survives a restart.
-- Add the `sheet_sync` table (`date TEXT PRIMARY KEY`, `status`, `detail`, `synced_at`), **left out of `Database.tables`** so the daily `deleteAll()` does not wipe it, plus `Database` helpers to read/write today's marker.
-- New `sync_day(task_manager)` in `backend/sheets.py`:
-  - Bail before any mutation if the read failed (per Group 4's success flag) — **a failed read must never delete anything**.
-  - Build the set of cell keys from column A, and the set of loaded cards with `source = 'sheet'`.
-  - **Create** cards for keys with no matching sheet-origin card, via `Message` + the existing create path.
-  - **Delete** sheet-origin cards whose key is absent from column A, via the existing `delete` command.
-  - **Leave matched cards untouched** — no state rewrite, so a completed task stays completed and a dismissed event stays dismissed.
-  - Never touch `source = 'local'` cards, and never touch timers or stopwatches.
-- Call it from `TaskManager.__init__` after `retrieve_data()`, guarded by: sync enabled, and today's marker absent.
-- Write the marker only on a successful run; log a one-line summary (created N, deleted M, skipped K).
+- [x] **Schema**: `source TEXT DEFAULT 'local'` and `sheet_key TEXT` added to the `events` and `tasks` `CREATE TABLE IF NOT EXISTS` statements in `Database.__init__`. **No migration code** — no `ALTER TABLE`, no `PRAGMA table_info`. The user drops the old tables on the Pi by hand, so `CREATE TABLE IF NOT EXISTS` builds them fresh with the new shape. Flag in the commit message and in the README that this upgrade requires dropping `events` and `tasks` (or deleting `productivity.db`) first. Both fields carried through `Message`, the `Task` constructor (inherited by `Event`), `get_tuple_to_save()` on both classes, and `get_ApiTask()` (inherited by `get_ApiEvent()`), so provenance survives a restart.
+- [x] `sheet_sync` table (`date TEXT PRIMARY KEY`, `status`, `detail`, `synced_at`), **left out of `Database.tables`** so the daily `deleteAll()` does not wipe it, plus `Database.get_sheet_sync()` / `set_sheet_sync()` and `get_date()`.
+- [x] New `sync_day(task_manager, force=False)` in `backend/sheets.py`:
+  - [x] Bails before any mutation if the read failed (per Group 4's success flag) — **a failed read never deletes anything**, and writes no marker, so the next restart retries.
+  - [x] Builds the set of cell keys from column A, and the set of loaded cards with `source = 'sheet'` (`_sheet_cards`).
+  - [x] **Creates** cards for keys with no matching sheet-origin card, via `Message` + `process_command("create")`. Ids come from `db.last_id + 1` per card, so the existing `date_id.txt` id allocation is reused rather than duplicated.
+  - [x] **Skips events whose ring time has already passed** (user decision, 2026-08-01 — see `requirements.md` § Import behavior for the full rule). `_has_passed()` compares the parsed UTC `ring_time` against now in UTC; at-or-before now counts as past. The check lives **here, at creation**, not in Group 4's parser, which stays time-independent. It applies to creation only — a matched card that has since rung is left alone by the rule above, or the manual button would wipe the day's events every evening. Tasks are unaffected. Counted separately from malformed cells in the summary log, since a past event is a normal outcome rather than a failure.
+  - [x] **Deletes** sheet-origin cards whose key is absent from column A, via the existing `delete` command.
+  - [x] **Leaves matched cards untouched** — no state rewrite, so a completed task stays completed and a dismissed event stays dismissed.
+  - [x] Never touches `source = 'local'` cards, and never touches timers or stopwatches (`_sheet_cards` only ever looks at `tasks` + `events`).
+- [x] Called from `TaskManager.__init__` after `retrieve_data()`, via a new `TaskManager.sync_sheets(force=False)` — that method is the seam Group 10's `sync_sheets` command hooks into. Guarded by: sync enabled (checked at the call site), and today's marker absent (checked inside `sync_day`, which is why `force` lives there rather than at the call site).
+- [x] Marker written only on a successful run; one-line summary logged as `created N, deleted M, past K, unparsed J`.
 
-**Verify**: fresh day + real sheet ⇒ cards match column A exactly. Restart ⇒ no duplicates. Delete a cell in the sheet and re-sync ⇒ that card disappears; a hand-made card next to it does not. Roll `date_id.txt` to a new date and restart ⇒ yesterday wiped, today synced.
+**Deviation from the plan, and why**: the plan put both guards at the call site. The enabled-check stayed there but the marker-check moved into `sync_day`, because Group 10 needs to bypass exactly one of them — a manual tap ignores the marker but must still respect the master switch. Keeping them in two places is what lets `force` be a single boolean instead of a duplicated code path.
+
+**Import is lazy, deliberately.** `TaskManager.sync_sheets()` imports `sheets_config` first and returns immediately if sync is off; `import sheets` happens only after that. So with `SHEETS_SYNC_ENABLED` false — every dev machine and the whole test suite — `gspread` is never loaded and no network call is reachable, which is what validation's "the import path must not run at all during tests" asks for. It also means there is no import cycle: `classes` reaches `sheets` only at call time, so `sheets` can import `Message` from `classes` at module level.
+
+**Verified 2026-08-18** (33-check scratch harness in a temp directory, `read_day` stubbed — **no credentials, no network, and the live spreadsheet never touched**; production `productivity.db` never opened):
+
+- Schema: `events` and `tasks` both carry `source`/`sheet_key`; `sheet_sync` is `(date, status, detail, synced_at)` and is absent from `Database.tables`.
+- First sync of a synthetic column A (2 events, 2 tasks, 1 unparseable) ⇒ `created 3, deleted 0, past 1, unparsed 1`. The future event and both tasks appear; the past event does not; the duration-looking cell `bath, bed, timers 8h` became a task and **no stopwatch or timer was created**.
+- Second run same day ⇒ skipped by the marker, no duplicates. A restart (`TaskManager()`) reloads the same three cards with `source = 'sheet'` and their `sheet_key` intact, and `get_ApiTask()` exposes both.
+- Completing an imported task and dismissing an imported event, then re-syncing with `force=True` ⇒ `created 0, deleted 0` and **both states preserved**; a hand-made local card sitting alongside is untouched.
+- Removing one cell ⇒ exactly that card deleted, the local card and the event untouched.
+- **Failed read (`ok=False`) ⇒ nothing deleted, board byte-identical, and the existing `ok` marker not overwritten.** This is the phase's highest-risk property.
+- Successfully-read **empty** column A ⇒ both remaining sheet cards deleted, local card survives — the deliberate "nothing scheduled today" case, and the one path that distinguishes an empty read from a failed one.
+- Rolling `date_id.txt` to an old date and restarting ⇒ cards wiped by the existing rollover, **and the `sheet_sync` marker survived `deleteAll()`**.
+- **82 backend tests pass, unmodified.** The backend restarts clean with `GET /api` ⇒ 200 and no traceback.
+
+**Confirmed cost of skipping the table drop** (measured, not predicted): with old-shape tables, creating a card raises `sqlite3.OperationalError: table tasks has no column named source`. That is not limited to the sync path — **hand-made cards fail too**, because the INSERT names the new columns unconditionally. Group 6's guard covers the sync half; the card-creation half is fixed only by doing the drop. The Pi's `events`/`tasks` were empty (0 rows) at the time of this work, so the drop costs nothing if done now.
+
+**Verify on the Pi (still owed, needs the real sheet)**: fresh day + real sheet ⇒ cards match column A exactly. Restart ⇒ no duplicates. Delete a cell in the sheet and re-sync ⇒ that card disappears; a hand-made card next to it does not. Roll `date_id.txt` to a new date and restart ⇒ yesterday wiped, today synced. These are validation steps 4–10.
 
 ## 6. Failure paths (3d) — *blocked on Group 5*
 

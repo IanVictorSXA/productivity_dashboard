@@ -4,7 +4,8 @@
 
 None added — per `requirements.md` (standing guidance in CLAUDE.md §1; user confirmed manual-only validation for this spec, since the real credentials, the real spreadsheet, and the Pi hardware all live on the device).
 
-- [ ] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**. Phase 3 adds a new startup step; this proves it didn't disturb the existing card/rollover behavior. With `SHEETS_SYNC_ENABLED` unset (the test default), the import path must not run at all during tests.
+- [x] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**.
+  - **Confirmed after Group 5 (2026-08-18)**: 82 passed, run in the container. Group 5 is the change this check exists for — it adds a startup step and two columns to `events`/`tasks` — and it disturbed nothing. `SHEETS_SYNC_ENABLED` is unset in the test environment, and `TaskManager.sync_sheets()` checks that flag *before* importing `sheets`, so the suite never loads `gspread` or reaches the network. Phase 3 adds a new startup step; this proves it didn't disturb the existing card/rollover behavior. With `SHEETS_SYNC_ENABLED` unset (the test default), the import path must not run at all during tests.
 
 ## Manual walkthrough — Sheets (run on the Pi, real service account, real spreadsheet)
 
@@ -13,6 +14,8 @@ Run against the actual app (backend + frontend via `docker compose up`), not a s
 ### Prerequisite — drop the old tables (one time, before section B)
 
 There is **no migration code** by design (`requirements.md` § Schema changes). Before the first run of the Group 5 build, drop the old `events` and `tasks` tables on the Pi — or delete `productivity.db` outright — so `CREATE TABLE IF NOT EXISTS` rebuilds them with `source` and `sheet_key`. **Any cards in those tables are lost**, so do it on an empty board.
+
+**This is a prerequisite of the build, not just of enabling sync** (measured 2026-08-18). With old-shape tables, *any* card creation raises `sqlite3.OperationalError: table tasks has no column named source` — including a card the user makes by hand, since `get_tuple_to_save()` names the new columns unconditionally. Group 6's guard wraps the sync only, so it does not cover that. At the time Group 5 landed, the Pi's `events` and `tasks` were both **empty (0 rows)**, so the drop cost nothing.
 
 Then confirm two things before continuing:
 
@@ -46,10 +49,24 @@ These run through `python sheets.py --dump` rather than the dashboard, because n
 3e. **[x]** No cell can produce a timer or a stopwatch.
    - **Done (2026-08-01)**: `SheetItem.type` is only ever `"event"` or `"task"`. Confirmed against the duration-looking real cell `bath, bed, timers 8h` and the digit-leading `5, 10, 15 reps`, both of which parse as plain tasks.
 
+### A3. Reconciliation logic (3b, 3c) — Group 5, off-device
+
+Steps 4–10 below need the real sheet and the Pi. These are what was provable without either: a 33-check harness run in a temp directory with `sheets.read_day` stubbed to return synthetic `SheetRead` objects — **no credentials, no network, the live spreadsheet never touched, and production `productivity.db` never opened**. They are not a substitute for section B; they are the reason section B is expected to pass on the first run.
+
+3f. **[x]** Schema is as specified: `events`/`tasks` carry `source` and `sheet_key`; `sheet_sync` is `(date, status, detail, synced_at)` and is **not** in `Database.tables`. Rolling `date_id.txt` to an old date and restarting wipes the cards and **leaves the marker**, which is the property that whole exclusion exists for.
+3g. **[x]** A synthetic column A (2 events, 2 tasks, 1 unparseable cell) syncs to `created 3, deleted 0, past 1, unparsed 1`: the future event and both tasks created, the past event skipped, `bath, bed, timers 8h` created as a **task** — no stopwatch, no timer.
+3h. **[x]** Re-running the same day is blocked by the marker (no duplicates); a restart reloads the cards with `source = 'sheet'` and `sheet_key` intact, and `get_ApiTask()` exposes both. This is the off-device half of step 10.
+3i. **[x]** A completed imported task and a dismissed imported event both survive a `force=True` re-sync unchanged, alongside an untouched hand-made local card — the off-device half of steps 29 and 33.
+3j. **[x]** Removing one cell deletes exactly that card and nothing else; a successfully-read **empty** column A deletes both remaining sheet cards while the local card survives.
+3k. **[x]** **A failed read (`ok=False`) deletes nothing** — the board comes back byte-identical and the existing `ok` marker is not overwritten. Group 4's step 3d proved the read reports failure honestly; this proves the diff acts on it. Step 18 is still the real-hardware version of this check.
+
 ### B. Start-of-day sync (3b, 3c)
 
 4. Set `date_id.txt`'s date line to yesterday and restart the backend. Confirm: yesterday's cards are wiped by the existing rollover, **and** the events and tasks from column A of the `Day` tab appear on the dashboard.
 5. Compare card-by-card against column A: every non-empty cell is present, with the right label, the right type (**event vs. task only** — no timer or stopwatch was created from a cell), and the right time on events. Nothing missing, nothing extra.
+5a. **Past events are skipped, not created** (user decision, 2026-08-01 — `requirements.md` § Import behavior). With a cell whose event time is earlier *today* (the real `645am`-style case: clear today's `sheet_sync` marker and restart in the afternoon), confirm **no card is created for it**, no alarm fires, the log names it as skipped-because-past *separately from malformed cells*, and every other cell in column A still syncs normally.
+5b. **Future events on the same run are unaffected.** In the same run as 5a, confirm an event later today (e.g. the `10pm` cell) **is** created with the right time — the skip must be per-event, not a switch that turns off event creation once one is past.
+5c. **A task is never skipped for being "late."** Confirm the tasks in column A all appear regardless of the hour the sync runs — the rule applies to ring times only, and tasks have none.
 6. Restart the backend again, same day. Confirm **no duplicates** and the log says the sync was skipped (already synced today).
 7. Add a cell to column A, then restart the backend. Confirm it is **not** picked up (the day is already marked done) — intended: the automatic trigger is once-per-day, and mid-day edits are the manual button's job (section D).
 8. Create a card by hand on the dashboard, then restart the backend. Confirm the hand-made card survives untouched.
@@ -91,6 +108,7 @@ Run these on the touchscreen, tapping — not with a mouse on a desktop browser.
 31. Tap the button again with the sheet unchanged. Confirm **nothing changes at all** — no new cards, no deletions. The marker is bypassed on this path, so the diff is the only guard; this step is what proves it.
 32. Double-tap the button quickly. Confirm only one sync runs (the control disables itself while the request is in flight) and no duplicates or spurious deletions result.
 33. **State is preserved**: complete an imported task and dismiss a rung imported event, then tap sync with those cells still in column A. Confirm the task stays completed and the event stays dismissed — a matched card must not be rewritten or resurrected.
+33a. **The past-event rule must never delete.** Late in the day, with events that have already rung still on the board and their cells still in column A, tap sync. Confirm those cards are **still there** — the skip rule governs creation only. This is the failure mode the rule can cause if it is applied to the diff as a whole: an evening tap that silently wipes the day's events for having passed. Pair it with step 33, which covers their dismissed state surviving.
 34. **Edit reads as delete + create**: change the text of a cell, tap sync. Confirm the old card is gone and a new one appears with the new text — expected per `requirements.md`, not a bug.
 35. **Locally deleting a sheet card does not stick**: delete a sheet-origin card on the dashboard, then tap sync with its cell still in column A. Confirm it comes back — the sheet is the source of truth; the documented fix is to delete the cell. Confirm this is what the README says.
 36. Disconnect the network and tap sync. Confirm the button reports a failure, the UI does not hang, and **every card is still present** — no deletions. Reconnect, tap again, confirm it succeeds.
@@ -108,6 +126,7 @@ Run these on the touchscreen, tapping — not with a mouse on a desktop browser.
 - [ ] Read-only scope confirmed in code — nothing in this branch can write to the spreadsheet (Phase 7 owns the write path).
 - [ ] **No failure path can delete a card** (step 18 — the highest-risk check in the phase).
 - [ ] Only `source = 'sheet'` events and tasks are ever deleted by a sync; local cards, timers, and stopwatches are untouchable by it (steps 29–30).
+- [ ] **Events whose ring time has passed are skipped at creation and never deleted for it** (steps 5a–5c and 33a) — a card is not created into an immediate alarm, and an evening sync does not wipe the events that already rang.
 - [ ] A Sheets failure never blocks startup or loses local cards (steps 11–19 all pass).
 - [ ] `source`/`sheet_key` are declared in `CREATE TABLE IF NOT EXISTS` only — **no `ALTER TABLE` or `PRAGMA` migration code anywhere in the branch** — and the required table drop is documented in the README and the Group 5 commit message (§ Prerequisite).
 - [ ] Provenance survives a backend restart (step 10).

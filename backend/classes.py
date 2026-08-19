@@ -63,6 +63,8 @@ class Message(BaseModel):
     completed: bool | None = None # is type task object completed?
     paused: bool = True # is type task object completed?
     pos: int = 0 # position of task
+    source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
+    sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
 
 class Task:
     """A plain to-do item: base class for `Event` and `Duration`/`Timer` too.
@@ -81,14 +83,20 @@ class Task:
         self.completed = msg.completed
         self.pos = msg.pos
 
+        # Provenance for the Google Sheets sync. A NULL `source` on an old row
+        # normalizes to 'local', which is the safe direction: only 'sheet' cards
+        # can be deleted by a sync.
+        self.source = msg.source or "local"
+        self.sheet_key = msg.sheet_key
+
         self.deleted = False
         self.alerting = False
 
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this task's initial row into the `tasks` table."""
-        return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos) VALUES(?, ?, ?, ?, ?)", \
-                (self.id, self.label, self.completed, self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?)", \
+                (self.id, self.label, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
 
     def delete(self, msg : Message = None):
         """Soft-delete: mark deleted so it's excluded from future `retrieveAll()` reads."""
@@ -123,7 +131,8 @@ class Task:
 
     def get_ApiTask(self):
         """Serialize for the `GET /api` response's `tasks` list."""
-        task = dict(id=self.id, label=self.label, completed=self.completed)
+        task = dict(id=self.id, label=self.label, completed=self.completed,
+                    source=self.source, sheet_key=self.sheet_key)
         return task
 
     def __str__(self):
@@ -145,8 +154,8 @@ class Event(Task):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this event's initial row into the `events` table."""
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
 
     def edit(self, msg : Message):
         """Rename and/or reschedule the ring time."""
@@ -407,6 +416,26 @@ class TaskManager:
 
         self.db = Database()
         self.retrieve_data()
+        self.sync_sheets()
+
+    def sync_sheets(self, force : bool = False):
+        """Import today's column A from Google Sheets, if sync is switched on.
+
+        Both the config check and the import are deferred to call time on
+        purpose: with `SHEETS_SYNC_ENABLED` false — every dev machine and the
+        whole test suite — `sheets.py` is never imported, so no Google library
+        is loaded and no network call can happen. `force` skips the
+        already-synced-today marker; that is the manual sync button's entry
+        point (3f), not the automatic one.
+        """
+        import sheets_config
+
+        if not sheets_config.SHEETS_SYNC_ENABLED:
+            return None
+
+        import sheets
+
+        return sheets.sync_day(self, force=force)
     # id: int | None = None
     # command: str
     # task: str | None = None # label

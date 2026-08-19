@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import gspread
 from google.auth.exceptions import GoogleAuthError
@@ -21,6 +22,9 @@ from google.oauth2.service_account import Credentials
 from requests.exceptions import RequestException
 
 import sheets_config
+# No cycle: `classes` only reaches this module lazily, from inside
+# `TaskManager.sync_sheets()`, so it is fully imported before we are.
+from classes import Message
 from sheets_parse import SheetRead, parse_column
 
 # Read-only for the whole phase: the write path (end-of-day stats) is Phase 7.
@@ -234,6 +238,111 @@ def read_day(worksheet: gspread.Worksheet | None = None) -> SheetRead:
     )
 
     return read
+
+
+def _sheet_cards(task_manager) -> dict[str, list]:
+    """Group every loaded card the sheet owns by its cell text.
+
+    Only `source = 'sheet'` cards are collected, which is the whole safety
+    property of the diff below: a card the user made by hand on the dashboard
+    is invisible to it and can never be deleted by a sync.
+    """
+    owned: dict[str, list] = {}
+
+    for card in list(task_manager.tasks) + list(task_manager.events):
+        if card.source == "sheet" and card.sheet_key:
+            owned.setdefault(card.sheet_key, []).append(card)
+
+    return owned
+
+
+def _has_passed(ring_time: str, now: datetime) -> bool:
+    """Has this event's ring time already gone by? Exactly now counts as past.
+
+    Both sides are absolute UTC — the parser resolved the cell's wall-clock text
+    against the user's zone — so this does not re-open the timezone question.
+    """
+    return datetime.fromisoformat(ring_time) <= now
+
+
+def sync_day(task_manager, force: bool = False) -> dict:
+    """Reconcile the dashboard's sheet-origin cards against today's column A.
+
+    The sheet owns the cards it created: a cell with no card gets one, a
+    sheet-origin card whose cell is gone is deleted, and a matched card is left
+    completely alone (a completed task stays completed, a dismissed event stays
+    dismissed). Local cards, timers, and stopwatches are never touched.
+
+    `force` bypasses the once-per-day marker — that marker exists to stop the
+    automatic startup trigger from re-running, not to stop the user (3f).
+    """
+    db = task_manager.db
+    date = db.get_date()
+
+    if not force:
+        marker = db.get_sheet_sync(date)
+        if marker is not None and marker["status"] == "ok":
+            logger.info("Sheets: %s already synced (%s), skipping", date, marker["detail"])
+
+            return {"date": date, "status": "skipped", "detail": "already synced today"}
+
+    read = read_day()
+
+    if not read.ok:
+        # A failed read means column A is *unknown*, not empty. Bailing out here,
+        # before a single mutation, is what keeps a network blip or an expired
+        # credential from being mistaken for "the user deleted everything today".
+        # No marker is written either, so the next restart retries.
+        logger.warning("Sheets: sync aborted, nothing created or deleted (%s)", read.error)
+
+        return {"date": date, "status": "error", "detail": read.error}
+
+    owned = _sheet_cards(task_manager)
+    cells = {item.key for item in read.items}
+    now = datetime.now(timezone.utc)
+
+    deleted = 0
+    for key, cards in owned.items():
+        if key in cells:
+            continue
+
+        for card in cards:
+            task_manager.process_command(Message(command="delete", id=card.id, type=card.type))
+            deleted += 1
+            logger.info("Sheets: deleted %s %r — its cell is gone from column A", card.type, key)
+
+    created, past = 0, 0
+    for item in read.items:
+        # Two identical cells produce one card; the cell text is the only key
+        # there is, so a duplicate row is indistinguishable from the original.
+        if item.key in owned:
+            continue
+
+        if item.type == "event" and _has_passed(item.ring_time, now):
+            # Creating it would put a card on the board that rings the instant it
+            # appears, for something already done or already missed. Counted apart
+            # from unparseable cells because it is a normal outcome, not a failure.
+            past += 1
+            logger.info("Sheets: A%d skipped, %r has already passed today", item.row, item.key)
+            continue
+
+        task_manager.process_command(Message(
+            command="create",
+            id=db.last_id + 1,
+            type=item.type,
+            label=item.label,
+            ring_time=item.ring_time,
+            completed=False,
+            source="sheet",
+            sheet_key=item.key,
+        ))
+        created += 1
+
+    detail = f"created {created}, deleted {deleted}, past {past}, unparsed {len(read.skipped)}"
+    db.set_sheet_sync(date, "ok", detail)
+    logger.info("Sheets: sync complete for %s — %s", date, detail)
+
+    return {"date": date, "status": "ok", "detail": detail}
 
 
 def check() -> int:
