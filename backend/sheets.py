@@ -265,45 +265,25 @@ def _has_passed(ring_time: str, now: datetime) -> bool:
     return datetime.fromisoformat(ring_time) <= now
 
 
-def sync_day(task_manager, force: bool = False) -> dict:
-    """Reconcile the dashboard's sheet-origin cards against today's column A.
+def _apply_diff(task_manager, read: SheetRead) -> tuple[int, int, int]:
+    """Bring the sheet-origin cards in line with column A; return (created, deleted, past).
 
-    The sheet owns the cards it created: a cell with no card gets one, a
-    sheet-origin card whose cell is gone is deleted, and a matched card is left
-    completely alone (a completed task stays completed, a dismissed event stays
-    dismissed). Local cards, timers, and stopwatches are never touched.
-
-    `force` bypasses the once-per-day marker — that marker exists to stop the
-    automatic startup trigger from re-running, not to stop the user (3f).
+    Called from exactly one place, on the far side of the `read.ok` check, and
+    that single call site is the whole safety argument for the deletion half:
+    there is no path from a failed read to this function. Everything that can go
+    wrong before it — config, key, network, 403, 404, a truncated read — returns
+    early in `_reconcile`, so no failure can be mistaken for "column A is empty".
     """
     db = task_manager.db
-    date = db.get_date()
-
-    if not force:
-        marker = db.get_sheet_sync(date)
-        if marker is not None and marker["status"] == "ok":
-            logger.info("Sheets: %s already synced (%s), skipping", date, marker["detail"])
-
-            return {"date": date, "status": "skipped", "detail": "already synced today"}
-
-    read = read_day()
-
-    if not read.ok:
-        # A failed read means column A is *unknown*, not empty. Bailing out here,
-        # before a single mutation, is what keeps a network blip or an expired
-        # credential from being mistaken for "the user deleted everything today".
-        # No marker is written either, so the next restart retries.
-        logger.warning("Sheets: sync aborted, nothing created or deleted (%s)", read.error)
-
-        return {"date": date, "status": "error", "detail": read.error}
-
     owned = _sheet_cards(task_manager)
-    cells = {item.key for item in read.items}
     now = datetime.now(timezone.utc)
 
     deleted = 0
     for key, cards in owned.items():
-        if key in cells:
+        # Matched against every non-empty cell, parsed or not (`read.cells`), so
+        # a cell that has *become* unparseable keeps its card rather than
+        # reading as a deleted row.
+        if key in read.cells:
             continue
 
         for card in cards:
@@ -338,11 +318,86 @@ def sync_day(task_manager, force: bool = False) -> dict:
         ))
         created += 1
 
+    return created, deleted, past
+
+
+def _record(task_manager, date: str, status: str, detail: str) -> None:
+    """Write the `sheet_sync` marker for `date`, swallowing a database failure.
+
+    The marker is diagnosis, not state the dashboard needs to run. If the
+    database is the thing that broke, failing to record *that* must not be what
+    finally takes startup down.
+    """
+    try:
+        task_manager.db.set_sheet_sync(date, status, detail)
+    except Exception:
+        logger.exception("Sheets: could not record %s status for %s", status, date)
+
+
+def _reconcile(task_manager, date: str, force: bool) -> dict:
+    """The sync proper. May raise; `sync_day` is the guard that makes sure it can't escape."""
+    if not force:
+        marker = task_manager.db.get_sheet_sync(date)
+        if marker is not None and marker["status"] == "ok":
+            logger.info("Sheets: %s already synced (%s), skipping", date, marker["detail"])
+
+            return {"date": date, "status": "skipped", "detail": "already synced today"}
+
+    read = read_day()
+
+    if not read.ok:
+        # A failed read means column A is *unknown*, not empty. Bailing out here,
+        # before a single mutation, is what keeps a network blip or an expired
+        # credential from being mistaken for "the user deleted everything today".
+        # The marker records the failure without marking the day done, so the
+        # next restart (or a tap of the manual button) retries.
+        logger.warning("Sheets: sync aborted, nothing created or deleted — %s", read.error)
+        _record(task_manager, date, "error", read.error)
+
+        return {"date": date, "status": "error", "detail": read.error}
+
+    created, deleted, past = _apply_diff(task_manager, read)
+
     detail = f"created {created}, deleted {deleted}, past {past}, unparsed {len(read.skipped)}"
-    db.set_sheet_sync(date, "ok", detail)
+    _record(task_manager, date, "ok", detail)
     logger.info("Sheets: sync complete for %s — %s", date, detail)
 
     return {"date": date, "status": "ok", "detail": detail}
+
+
+def sync_day(task_manager, force: bool = False) -> dict:
+    """Reconcile the dashboard's sheet-origin cards against today's column A.
+
+    The sheet owns the cards it created: a cell with no card gets one, a
+    sheet-origin card whose cell is gone is deleted, and a matched card is left
+    completely alone (a completed task stays completed, a dismissed event stays
+    dismissed). Local cards, timers, and stopwatches are never touched.
+
+    `force` bypasses the once-per-day marker — that marker exists to stop the
+    automatic startup trigger from re-running, not to stop the user (3f).
+
+    **This function never raises.** It runs inside `TaskManager.__init__`, so an
+    exception here would be a backend that does not start; the dashboard has to
+    work with the sheet unreachable, misconfigured, or absent. Anticipated
+    failures already arrive as a typed `SheetsError` message via `read_day`; the
+    catch-all below is for the unanticipated ones — a `sqlite3.OperationalError`
+    from tables that were never dropped, a gspread internal, a bad key file that
+    only fails on use — which are logged with a traceback and swallowed.
+    """
+    date = None
+
+    try:
+        date = task_manager.db.get_date()
+
+        return _reconcile(task_manager, date, force)
+    except Exception as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.exception("Sheets: sync failed for %s — the dashboard is unaffected", date or "today")
+
+        if date:  # if `get_date()` is what failed there is no key to record under
+            _record(task_manager, date, "error", detail)
+
+        return {"date": date, "status": "error", "detail": detail}
 
 
 def check() -> int:
@@ -385,6 +440,10 @@ def dump() -> int:
 
 
 if __name__ == "__main__":
+    # Same reason as `main.py`: without a handler on the root logger the INFO
+    # lines these commands rely on ("read column A — N items") never appear.
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
     arguments = sys.argv[1:]
 
     if "--dump" in arguments:

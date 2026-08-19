@@ -16,7 +16,10 @@ response.
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import bisect
+import logging
 from database import Database
+
+logger = logging.getLogger(__name__)
 
 total_time_format = "%H:%M:%S"
 time_format = "%I:%M:%S %p" # datetime.strptime("12:00:00 PM", time_format)
@@ -427,15 +430,26 @@ class TaskManager:
         is loaded and no network call can happen. `force` skips the
         already-synced-today marker; that is the manual sync button's entry
         point (3f), not the automatic one.
+
+        Nothing about Sheets is allowed to stop the dashboard, so this never
+        raises. `sync_day` has its own guard; this outer one covers the two
+        things that happen before it exists — a `sheets_config` that cannot be
+        read, and an `import sheets` that fails because the google libraries are
+        missing from a stale image (the real Group 3 failure).
         """
-        import sheets_config
+        try:
+            import sheets_config
 
-        if not sheets_config.SHEETS_SYNC_ENABLED:
-            return None
+            if not sheets_config.SHEETS_SYNC_ENABLED:
+                return None
 
-        import sheets
+            import sheets
 
-        return sheets.sync_day(self, force=force)
+            return sheets.sync_day(self, force=force)
+        except Exception as error:
+            logger.exception("Sheets: sync could not run — starting without it")
+
+            return {"date": None, "status": "error", "detail": f"{type(error).__name__}: {error}"}
     # id: int | None = None
     # command: str
     # task: str | None = None # label

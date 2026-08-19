@@ -75,6 +75,10 @@ class SheetRead:
     items: list[SheetItem] = field(default_factory=list)
     skipped: list[tuple[int, str]] = field(default_factory=list)  # (row, reason)
     error: str | None = None
+    # Every non-empty cell text, parsed or not. The diff deletes against this
+    # rather than against `items`, so a cell that stops parsing keeps its card
+    # instead of looking like the user deleted the row.
+    cells: set[str] = field(default_factory=set)
 
 
 def _to_iso(hour: int, minute: int, tz) -> str:
@@ -150,8 +154,11 @@ def parse_column(values: list[str], header_rows: int = HEADER_ROWS) -> SheetRead
     tz = get_timezone()  # resolved once per read, not once per cell
 
     for row, text in enumerate(values[header_rows:], start=header_rows + 1):
-        if not text.strip():
+        key = text.strip()
+        if not key:
             continue
+
+        read.cells.add(key)
 
         try:
             read.items.append(parse_cell(row, text, tz))

@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–5, 8–8c and 9 are unblocked (1–5 and 8–8c are done). The sheet layout that blocked the parsing work was supplied on 2026-08-01 and Group 5 landed on 2026-08-18, so **Group 6 (failure paths) is now the next unblocked group**; 7 follows it, and Group 10 is blocked on 5–7. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
+**Dependency note**: Groups 1–6, 8–8c and 9 are unblocked (1–6 and 8–8c are done). Group 6 landed on 2026-08-18, so **Group 7 (sync status on the API) is now the next unblocked group**; Group 10 is blocked on 7 alone. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
 
 ---
 
@@ -103,16 +103,32 @@ This is the diff described in `requirements.md` § Reconciliation. **Schema firs
 
 **Verify on the Pi (still owed, needs the real sheet)**: fresh day + real sheet ⇒ cards match column A exactly. Restart ⇒ no duplicates. Delete a cell in the sheet and re-sync ⇒ that card disappears; a hand-made card next to it does not. Roll `date_id.txt` to a new date and restart ⇒ yesterday wiped, today synced. These are validation steps 4–10.
 
-## 6. Failure paths (3d) — *blocked on Group 5*
+## 6. Failure paths (3d) — **COMPLETE** (2026-08-18)
 
-- Wrap the whole sync in a guard so **any** exception is logged and swallowed: startup always completes and local state is always intact.
-- Distinguish and log the cases from the failure matrix in `requirements.md` (disabled, key missing, key malformed, network, 403 unshared, 404 wrong id/tab, partial read, bad cell) with messages that name the fix, not just the traceback.
-- **The deletion half is the dangerous half**: assert that every failure path exits before the diff runs, so no failure mode can be mistaken for "column A is empty, delete everything." A successfully-read-but-empty column A is the *only* way mass deletion happens.
-- Failures record status in `sheet_sync` **without** marking the day done, so the next restart retries.
+- [x] **Two guards, not one.** `sheets.sync_day()` is now a wrapper whose whole body is `try: _reconcile(...) except Exception:` — it logs with a traceback, records the failure, and returns an error status. `TaskManager.sync_sheets()` wraps the layer above it, because two things happen *before* `sync_day` exists and so cannot guard themselves: reading `sheets_config`, and `import sheets` — the latter being the real Group 3 failure (`ModuleNotFoundError: No module named 'gspread'` from a stale image). Either way startup completes and local state is untouched.
+- [x] Anticipated failures were already typed and message-carrying from Groups 3–4; Group 6 is what makes them *land somewhere*. Each of the six matrix causes (config, key missing, key malformed, network, 403 unshared, 404 wrong id/tab) now reaches both the log and the `sheet_sync` row with the fix named in the text.
+- [x] **The deletion half is structural, not asserted.** The diff moved into `_apply_diff()`, called from exactly one place — the line after the `read.ok` check. There is no path from a failed read to that function, and the single call site is what makes that inspectable rather than a claim.
+- [x] **The unparseable-cell promise made real.** `SheetRead` gained `cells`: every non-empty cell text, parsed or not. Deletion now diffs against that instead of against `items`, so a cell that *stops* parsing keeps its card rather than reading as a deleted row. Before, the matrix's "treat the cell's existing card as still present" held only because parsing is deterministic — true today, and quietly dependent on nobody ever editing the grammar.
+- [x] Failures record `status = 'error'` in `sheet_sync` **without** marking the day done. The automatic trigger gates on `status == 'ok'`, so an error row leaves the day retryable on the next restart, and the row is what Group 7 exposes on `GET /api`.
+- [x] `_record()` swallows a failure of the marker write itself: if the database is what broke, failing to record *that* must not be what finally takes startup down.
 
-**Verify**: walk the matrix by breaking one thing at a time (rename the key file, wrong spreadsheet id, unshare the sheet, disconnect the Pi's network) and confirm each time that the dashboard still boots with local cards intact, **nothing was deleted**, and the log names the cause.
+**Deviation from Group 5, deliberate**: Group 5 verified that a failed read *does not overwrite* an existing `ok` marker. It now does — the row means "the last attempt for this date, and how it went", which is what makes it usable as the manual button's feedback (3f) instead of a stale success. The cost is that a failed evening sync re-opens the automatic trigger for that date, so a restart later the same day re-syncs. That is idempotent by construction (matched cards are left alone) and its only visible effect is the already-documented one: a sheet card the user deleted by hand on the dashboard comes back.
 
-## 7. Sync status on the API (3d) — *blocked on Group 6*
+**One thing the plan did not contain, and it was load-bearing**: none of this logging was reaching the container log. Uvicorn configures its own loggers and leaves the **root logger empty at WARNING**, so every `logger.info` in `sheets.py`/`sheets_parse.py` was dropped and the warnings printed bare — no timestamp, no level, no logger name. Measured in the container, not assumed. A `logging.basicConfig(level=INFO, ...)` in `main.py` before `TaskManager()` fixes it, plus the same line in `sheets.py`'s `__main__` block for `--check`/`--dump`. Without it, this group's verification criterion ("the log names the cause") could not be met — the log named nothing.
+
+**Verified 2026-08-18** (33-check harness in a temp directory, `sheets.read_day` stubbed — **no credentials, no network, the live spreadsheet never touched**, production `productivity.db` never opened; see validation § C0):
+
+- All six matrix causes ⇒ error status, **nothing created or deleted**, marker records the cause with the fix in the text, day not marked done.
+- `import sheets` failing ⇒ error status, `TaskManager()` still constructs.
+- `RuntimeError` and `sqlite3.OperationalError: table tasks has no column named source` from inside the sync ⇒ both caught by the same guard, board unchanged.
+- The marker write itself failing, and `db.get_date()` itself failing ⇒ still no exception escapes; the latter returns `date: None`.
+- An error marker does **not** count as "already synced" (the retry property); an `ok` marker still does.
+- An unparseable cell keeps its card (`created 0, deleted 0, past 0, unparsed 1`); a successfully-read **empty** column A still deletes sheet cards and keeps local ones — the one path to mass deletion, still open, still the only one.
+- **82 backend tests pass, unmodified.** Backend restarts clean, `GET /api` ⇒ 200, no traceback. `sheets.py --check`/`--dump` still print their typed message and exit 1 with the credential unreachable.
+
+**Still owed on the Pi** (validation steps 11–18): the matrix walked against the real sheet by breaking one thing at a time — rename the key file, wrong spreadsheet id, unshare the sheet, pull the network — confirming each time that the dashboard boots with local cards intact, **nothing was deleted**, and the log names the cause.
+
+## 7. Sync status on the API (3d) — *unblocked; next*
 
 - Add a `sheet_sync` object (`date`, `status`, `detail`) to `TaskManager.get_ApiState()`'s response.
 - No frontend change — the field exists for a later phase to render.

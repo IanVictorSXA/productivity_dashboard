@@ -5,6 +5,7 @@
 None added — per `requirements.md` (standing guidance in CLAUDE.md §1; user confirmed manual-only validation for this spec, since the real credentials, the real spreadsheet, and the Pi hardware all live on the device).
 
 - [x] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**.
+  - **Confirmed again after Group 6 (2026-08-18)**: 82 passed, unmodified, in the container. Group 6 touches `main.py` (a `logging.basicConfig` call) and `classes.py` (the outer sync guard), so this is the check that the guard did not change any card behavior.
   - **Confirmed after Group 5 (2026-08-18)**: 82 passed, run in the container. Group 5 is the change this check exists for — it adds a startup step and two columns to `events`/`tasks` — and it disturbed nothing. `SHEETS_SYNC_ENABLED` is unset in the test environment, and `TaskManager.sync_sheets()` checks that flag *before* importing `sheets`, so the suite never loads `gspread` or reaches the network. Phase 3 adds a new startup step; this proves it didn't disturb the existing card/rollover behavior. With `SHEETS_SYNC_ENABLED` unset (the test default), the import path must not run at all during tests.
 
 ## Manual walkthrough — Sheets (run on the Pi, real service account, real spreadsheet)
@@ -72,6 +73,18 @@ Steps 4–10 below need the real sheet and the Pi. These are what was provable w
 8. Create a card by hand on the dashboard, then restart the backend. Confirm the hand-made card survives untouched.
 9. Put a deliberately malformed cell in column A, clear today's `sheet_sync` marker, restart. Confirm the other cells still sync, the bad cell is logged with its row number, and — critically — **no card was deleted** because of it.
 10. Confirm provenance survives a restart: after a sync, restart the backend and check that sheet-origin cards still carry `source = 'sheet'`, so a later sheet deletion can still remove them (section D exercises this).
+
+### C0. Failure paths (3d) — Group 6, off-device
+
+Same shape as A3, and for the same reason: steps 11–18 need the Pi and the real credentials, and these are what was provable without either. A 33-check harness in a temp directory with `sheets.read_day` stubbed — **no credentials, no network, the live spreadsheet never touched, and production `productivity.db` never opened**.
+
+11a. **[x]** All six matrix causes (config unset, key file missing, key malformed, network, 403 unshared, 404 wrong id/tab) ⇒ error status, **nothing created or deleted**, and the `sheet_sync` row carries the cause *with the fix named in the text* ("share it (Viewer is enough) with python-api@…", "check SHEETS_SPREADSHEET_ID"), not a traceback.
+11b. **[x]** The day is **not** marked done by a failure, and an `error` row does not gate the next automatic run — while an `ok` row still does. This is the retryability property; step 15 is its real-hardware version.
+11c. **[x]** `import sheets` failing (the stale-image `ModuleNotFoundError` from step 1's prerequisite) ⇒ error status, `TaskManager()` still constructs. This is the failure the inner guard structurally cannot catch.
+11d. **[x]** An unanticipated exception from inside the sync — a bare `RuntimeError`, and `sqlite3.OperationalError: table tasks has no column named source` — is caught by the same guard, logged with a traceback, and leaves the board unchanged. The second is the un-dropped-tables case from the prerequisite above, confirmed to degrade safely rather than needing the old database on hand.
+11e. **[x]** The marker write itself failing, and `db.get_date()` itself failing, both stay swallowed: no exception escapes, and the latter reports `date: None`.
+11f. **[x]** An unparseable cell keeps its card (`created 0, deleted 0, past 0, unparsed 1`) — now structural, since the delete pass diffs against every non-empty cell rather than the parsed ones. A successfully-read **empty** column A still deletes sheet cards and keeps local ones: the only path to mass deletion, and still the only one.
+11g. **[x]** Log visibility, measured in the container: under uvicorn's config the root logger has no handler and sits at WARNING, so every `logger.info` in the sync path was being dropped and its warnings printed with no level or timestamp. After the `basicConfig` in `main.py`, the sync's INFO and WARNING lines both appear with timestamp, level, and logger name, and uvicorn's own lines still appear exactly once.
 
 ### C. Failure paths (3d) — after every step here, the dashboard must still boot, local cards must be intact, and **nothing may have been deleted**
 
