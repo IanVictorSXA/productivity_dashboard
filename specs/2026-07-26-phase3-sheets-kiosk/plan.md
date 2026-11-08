@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–7 and 8–8c are done. **Group 9 (the Chromium kiosk session) and Group 10 (the manual sync button) are both unblocked**, and Group 11 (docs) closes the phase out after them. Kiosk work (8–9) can be done in parallel or first if the Pi currently needs a manual start each boot. Groups 8b and 8c tune what Group 8 landed and should precede Group 11, so the docs close out against the final boot sequence and the final dependency lists.
+**Dependency note**: Groups 1–9 are done. **Group 10 (the manual sync button) is the only implementation group left**, and Group 11 (docs) closes the phase out after it. Every host-side file the kiosk needs is written but deliberately not installed — the install commands are in `deploy/README.md` and the user runs them.
 
 ---
 
@@ -242,12 +242,28 @@ Net declared list: `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google
 - site-packages **185MB → 78MB**, backend image **436MB → 308MB**, `pip freeze` **42 → 33** packages.
 - **Not verified here**: nothing outstanding for this group. The kiosk-hardware steps still owed from Group 8b (validation 20–22, 25) are unaffected by it — no boot-path file changed.
 
-## 9. Browser kiosk session (3e) — *blocked on Group 8*
+## 9. Browser kiosk session (3e) — **COMPLETE** (2026-08-18)
 
-- Desktop autologin is **already enabled** on the Pi (user-confirmed) — nothing to configure. Note the dependency in `deploy/README.md` so a future re-image doesn't silently break the kiosk, and confirm it still holds during validation.
-- `deploy/kiosk.sh`: wait for the dashboard URL to answer, then exec Chromium with `--kiosk`, `--noerrdialogs`, `--disable-infobars`, `--disable-session-crashed-bubble`, `--autoplay-policy=no-user-gesture-required` (Phase 4 forward-compat, per `requirements.md`), wrapped in a relaunch loop for browser-crash recovery.
-- `deploy/kiosk.desktop` autostart entry pointing at the script; blank the screensaver/DPMS so the display stays on.
-- Install instructions in `deploy/README.md`.
+- [x] `deploy/kiosk.sh`: waits for the backend *and* the dashboard URL to answer, then launches Chromium with `--kiosk`, `--noerrdialogs`, `--disable-infobars`, `--disable-session-crashed-bubble` and `--autoplay-policy=no-user-gesture-required` (the Phase 4 forward-compat flag), wrapped in a relaunch loop. After a relaunch it waits for the dashboard *again* rather than reopening straight onto an error page — whatever killed the browser may have taken the containers with it.
+- [x] `deploy/kiosk.desktop` — the XDG autostart entry the plan asked for. Kept, but **not** the documented default; see the deviation below.
+- [x] Install, check, stop and log instructions in `deploy/README.md`, alongside the screen-blanking and autologin checks. **Nothing was installed onto the device from here**, per `requirements.md` § Kiosk autostart: the user runs the one-line install.
+- [x] Autologin confirmed rather than assumed: `/etc/systemd/system/getty@tty1.service.d/autologin.conf` carries `--autologin team` and the default target is `graphical.target`. Noted in `deploy/README.md` as the dependency it is, so a re-image cannot silently break the kiosk.
+
+**Deviation, and the measurement behind it**: the plan assumed a generic desktop autostart. The device runs **labwc on Wayland** (Pi OS trixie), so the documented install is one line appended to `~/.config/labwc/autostart`, not the `.desktop` file. That file is *additive* rather than overriding because the session runs `labwc -m` (merge-config) — which is why the panel and file manager keep running with a user autostart present, and it is the same file `raspi-config` writes its blanking line into. The `.desktop` route still works (`/etc/xdg/labwc/autostart` ends with `lxsession-xdg-autostart`) and is documented as the alternative, with an explicit "install one, never both" — two entries would mean two Chromiums fighting for the screen.
+
+**Two more things the plan had wrong about this hardware**, both checked on the device:
+
+- **The binary is `/usr/bin/chromium`.** There is no `chromium-browser` on trixie. `kiosk.sh` accepts either name so a re-image onto an older release still works.
+- **Screen blanking is already off, and `xset` is the wrong tool.** On labwc it is a `swayidle`/`wlopm` line that `raspi-config` adds to that same autostart file; there is no such line here and no `swayidle` process, so the display never blanks. The plan's "blank the screensaver/DPMS" step is therefore a *check* (`grep swayidle ~/.config/labwc/autostart`, plus `sudo raspi-config nonint do_blanking 1` to disable) rather than a change — nothing in the repo touches host display config.
+
+**Addition beyond the plan**: `kiosk.sh --check` prints the browser it found, whether each URL answers right now, and the exact command it would run — and launches nothing. Same pattern as Group 3's `sheets.py --check`, and the reason this group could be verified at all without taking over the user's physical screen.
+
+**Verified 2026-08-18** (on the Pi, script not installed):
+
+- `bash -n` clean. `--check` against the running stack ⇒ `browser: /usr/bin/chromium`, both URLs answering, exit 0, and the full command line printed.
+- `--check` with the backend pointed at a dead port ⇒ names that URL as not ready and exits 1; a bad argument exits 2 with usage.
+- **It waits rather than launching**: run with the backend URL pointed at a dead port, it blocked for 70s, logged its once-a-minute "still waiting" line at exactly 60s, and **no Chromium process ever started**.
+- Not verified here, and it needs the physical machine: the actual kiosk launch, a reboot, and a browser kill — validation steps 20 and 23–25. Launching a full-screen browser would have taken over the screen the user is sitting in front of.
 
 **Verify**: pull the power, plug it back in, touch nothing ⇒ the Pi lands on the full-screen dashboard with no cursor, no chrome, no login prompt. Kill Chromium ⇒ it relaunches.
 

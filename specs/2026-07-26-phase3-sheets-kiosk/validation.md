@@ -107,10 +107,17 @@ Same shape as A3, and for the same reason: steps 11–18 need the Pi and the rea
 20. `sudo reboot`, with no keyboard or mouse attached. Confirm the Pi reaches the full-screen dashboard unattended: the already-configured autologin still lands in the desktop session, both containers come up, and Chromium opens in kiosk mode with no address bar, tabs, cursor, or infobar.
 21. **Power-cut test**: pull power mid-session, restore it, touch nothing. Confirm the same end state as 20, and that the cards from before the cut are still there (local state survived).
 22. `docker kill` the backend container. Confirm it restarts on its own and the dashboard recovers without a manual page reload beyond what the frontend already does.
-23. Kill Chromium. Confirm the wrapper relaunches it into kiosk mode.
+23. Kill Chromium (`pkill -f dashboard-kiosk`). Confirm the wrapper relaunches it into kiosk mode within ~5s.
 24. Confirm the screen does not blank or sleep after idling (screensaver/DPMS disabled).
 25. Confirm the boot ordering holds: the browser does not sit on a connection-error page because it raced the backend — repeat the reboot 2–3 times to catch a race.
 26. Confirm no traceback in `docker compose logs backend` and no error in the browser console across steps 20–25.
+
+**Group 9 (2026-08-18) — what was provable without taking over the screen.** Launching a full-screen browser would have hijacked the display the user was sitting in front of, so the kiosk itself was not started from here; `kiosk.sh --check` exists precisely so the rest could be checked:
+
+26a. **[x]** `bash -n` clean; `--check` against the running stack prints `browser: /usr/bin/chromium`, both URLs answering, the exact command line, and exits 0.
+26b. **[x]** `--check` with the backend pointed at a dead port names that URL as not ready and exits 1; a bad argument exits 2 with usage.
+26c. **[x]** **It waits rather than launching.** With the backend URL pointed at a dead port the script blocked for 70s, logged its once-a-minute "still waiting" line at exactly 60s, and **no Chromium process ever started** — the readiness gate is real, not decorative.
+26d. **[x]** Host facts confirmed on the device rather than assumed: the session is **labwc on Wayland** (`labwc -m`, so the user autostart is additive), the binary is `/usr/bin/chromium` (no `chromium-browser` on trixie), autologin is `--autologin team` on `getty@tty1` with `graphical.target` default, and **screen blanking is already off** — no `swayidle` line in `~/.config/labwc/autostart`, no `swayidle` process.
 
 ## D. Manual walkthrough — manual sync button (3f)
 

@@ -152,3 +152,88 @@ empty either way.
   absent.
 - **Ports**: both services bind to `127.0.0.1` only (5173 frontend, 8080
   backend). Nothing on the LAN can reach the dashboard, by design.
+
+## Kiosk browser session
+
+`kiosk.sh` waits for the dashboard to answer, opens Chromium full-screen at it,
+and relaunches Chromium if it ever exits. The relaunch loop is the point: this
+machine has no keyboard, so a browser crash would otherwise leave a black screen
+until someone finds one.
+
+What the device actually runs (checked 2026-08-18, not assumed — the answers
+differ from older Pi images and change how this is installed):
+
+- **Compositor: labwc**, on Wayland, Pi OS trixie. Not wayfire, not X11 — so
+  `xset s off -dpms` and `~/.config/wayfire.ini` are both the wrong tool here.
+- **Chromium is `/usr/bin/chromium`.** There is no `chromium-browser` on
+  trixie; `kiosk.sh` accepts either name so a re-image onto an older release
+  still works.
+- **Autologin is already on**: `/etc/systemd/system/getty@tty1.service.d/autologin.conf`
+  carries `--autologin team`, and the default target is `graphical.target`.
+  The kiosk depends on this — no session, no autostart, no dashboard.
+
+### Install
+
+Append one line to the user's labwc autostart:
+
+```bash
+echo '/home/team/coding/productivity_dashboard/deploy/kiosk.sh >> ~/.cache/dashboard-kiosk.log 2>&1 &' >> ~/.config/labwc/autostart
+```
+
+Then log out and back in, or reboot.
+
+**Why that file**: the session runs `labwc -m` (`labwc-pi` execs it), and `-m` is
+*merge-config* — the user's `~/.config/labwc/autostart` is additive to
+`/etc/xdg/labwc/autostart`, not a replacement for it. That is why the panel and
+file manager keep running with a user autostart present, and it is the same file
+`raspi-config` appends its screen-blanking line to.
+
+**The alternative, if you prefer XDG autostart**: `/etc/xdg/labwc/autostart` ends
+with `lxsession-xdg-autostart`, so a `~/.config/autostart/kiosk.desktop` is
+launched too:
+
+```bash
+mkdir -p ~/.config/autostart && cp deploy/kiosk.desktop ~/.config/autostart/
+```
+
+**Install one or the other, never both** — two autostart entries means two
+Chromiums fighting for the screen.
+
+### Check it without rebooting
+
+```bash
+deploy/kiosk.sh --check    # prints the browser, whether each URL answers, and
+                           # the exact command it would run. Launches nothing.
+```
+
+Exit 0 means it would start immediately; exit 1 means it would sit in its wait
+loop, and the line naming the URL says what it is waiting for.
+
+### The screen must not blank
+
+A kiosk that blanks after ten minutes is a black screen with no keyboard to wake
+it. On labwc this is a `swayidle` line in the same autostart file, added and
+removed by `raspi-config`:
+
+```bash
+grep swayidle ~/.config/labwc/autostart   # no output = blanking is off (current state)
+sudo raspi-config nonint do_blanking 1    # 1 disables, 0 enables — yes, that way round
+```
+
+Nothing in this repo touches it; it is already off on this device, and this is
+the check to re-run after a re-image.
+
+### Day-to-day
+
+```bash
+tail -f ~/.cache/dashboard-kiosk.log   # what the kiosk is waiting for / relaunching
+pkill -f dashboard-kiosk               # kill Chromium; the wrapper reopens it in ~5s
+```
+
+To stop the kiosk for good, delete the autostart line (or the `.desktop`) first,
+then `pkill -f kiosk.sh` before killing Chromium — otherwise the wrapper is doing
+exactly its job and putting the browser straight back.
+
+Chromium runs against its own profile at `~/.config/dashboard-kiosk`, so the
+kiosk never inherits the tabs or "restore pages?" state of a browser someone was
+using by hand.
