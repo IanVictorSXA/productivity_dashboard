@@ -6,9 +6,14 @@ __pycache__/
 productivity.db
 date_id.txt
 readme_claude.md
-AGENTS.md
 CLAUDE.md
 .claudeignore
 .claude/
 .pytest_cache/
 date_id.txt
+backend/productivity-dashboard-503701-03b014c70abf.json
+.env
+.env.*
+!.env.example
+.pytest_cache/
+scrum_guide.pdf

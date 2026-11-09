@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Productivity Dashboard kiosk
+Comment=Waits for the dashboard, then opens Chromium full-screen at it
+# Absolute path: autostart entries get no working directory. Edit this if the
+# repo does not live at /home/team/coding/productivity_dashboard.
+Exec=/home/team/coding/productivity_dashboard/deploy/kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true

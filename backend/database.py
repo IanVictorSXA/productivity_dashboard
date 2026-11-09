@@ -9,11 +9,34 @@ alone so a same-day restart (e.g. a Pi reboot) doesn't lose in-progress state.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from contextlib import closing
 
 date_str_format = "%Y-%m-%d"
+
+date_id_filename = "date_id.txt"
+
+def _zone_from(line):
+    """Line 1 of `date_id.txt` is an IANA timezone name."""
+    return ZoneInfo(line.strip())
+
+def get_timezone():
+    """Return the app's configured timezone, falling back to the system's.
+
+    Same source of truth as the daily rollover below — line 1 of `date_id.txt`.
+    Unlike `Database.__init__`, this never raises: the Sheets sync calls it to
+    turn a sheet's wall-clock time into a timestamp, and a bad line there must
+    degrade to the system zone rather than take startup down with it.
+    """
+    try:
+        with open(date_id_filename, "r") as file:
+            return _zone_from(file.readline())
+    except Exception as error:
+        fallback = datetime.now().astimezone().tzinfo
+        print(f"could not read timezone from {date_id_filename} ({error}); using {fallback}")
+
+        return fallback
 
 def dict_factory(cursor, row):
     """sqlite3 row_factory that returns each row as a `{column_name: value}` dict."""
@@ -23,6 +46,9 @@ def dict_factory(cursor, row):
 
 class Database:
     """Owns the SQLite connection lifecycle, schema, and the date-based rollover."""
+    # `sheet_sync` is deliberately absent: it records which dates have already
+    # been imported from Google Sheets, so it has to outlive the daily wipe that
+    # `deleteAll()` performs on everything in this list.
     tables = ["tasks", "events", "stopwatches", "timers"]
     # TODO create a function that handles the context manager protocol for sql connection and cursor
     def __init__(self):
@@ -40,6 +66,12 @@ class Database:
 
         with sqlite3.connect(self.db_name) as con:
             with closing(con.cursor()) as cursor:
+                # `source`/`sheet_key` are the Google Sheets provenance columns:
+                # only a 'sheet' card is eligible for sync-driven deletion, and
+                # `sheet_key` is the raw cell text the diff matches on. There is
+                # no migration code by design — an existing events/tasks table is
+                # left untouched by CREATE TABLE IF NOT EXISTS, so the upgrade
+                # requires dropping both tables by hand (see README).
                 cursor.execute("""CREATE TABLE IF NOT EXISTS events(
                             id INTEGER UNIQUE,
                             type TEXT DEFAULT event,
@@ -48,16 +80,20 @@ class Database:
                             alerting BOOLEAN DEFAULT 0,
                             completed BOOLEAN DEFAULT 0,
                             deleted BOOLEAN,
-                            pos INTEGER)""")
-                
+                            pos INTEGER,
+                            source TEXT DEFAULT 'local',
+                            sheet_key TEXT)""")
+
                 cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
-                            id INTEGER UNIQUE, 
+                            id INTEGER UNIQUE,
                             type TEXT DEFAULT task,
                             label TEXT NOT NULL,
-                            completed BOOLEAN DEFAULT 0, 
+                            completed BOOLEAN DEFAULT 0,
                             deleted BOOLEAN,
-                            pos INTEGER)""")
-                
+                            pos INTEGER,
+                            source TEXT DEFAULT 'local',
+                            sheet_key TEXT)""")
+
                 cursor.execute("""CREATE TABLE IF NOT EXISTS stopwatches(
                             id INTEGER UNIQUE,
                             type TEXT DEFAULT duration,
@@ -85,13 +121,21 @@ class Database:
                             paused BOOLEAN,
                             deleted BOOLEAN,
                             pos INTEGER )""")
+
+                # One row per calendar date: has today's sheet import already run,
+                # and how did it go. Not in `tables`, so `deleteAll()` never wipes it.
+                cursor.execute("""CREATE TABLE IF NOT EXISTS sheet_sync(
+                            date TEXT PRIMARY KEY,
+                            status TEXT,
+                            detail TEXT,
+                            synced_at TEXT)""")
             con.commit()
 
         self.last_id = -1
-        self.filename = "date_id.txt"
+        self.filename = date_id_filename
         with open(self.filename, "r") as file:
             self.text = file.readlines()
-            tz = ZoneInfo(self.text[0].strip())
+            tz = _zone_from(self.text[0])
 
         if len(self.text) == 1:
             date = datetime.now(tz=tz).date()
@@ -125,6 +169,37 @@ class Database:
         with open(self.filename, "w") as file:
             self.text[2] = str(self.last_id) + "\n"
             file.writelines(self.text)
+
+    def get_date(self):
+        """Today's date (`YYYY-MM-DD`) as the rollover settled it — line 2 of `date_id.txt`.
+
+        The sheet sync keys its marker on this rather than on `datetime.now()`
+        so "today" means the same thing to both, timezone included.
+        """
+        return self.text[1].strip()
+
+    def get_sheet_sync(self, date : str):
+        """Return the `sheet_sync` row for `date` as a dict, or None if there is none."""
+        with sqlite3.connect(self.db_name) as con:
+            con.row_factory = dict_factory
+            with closing(con.cursor()) as cursor:
+                cursor.execute("SELECT * FROM sheet_sync WHERE date = ?", (date,))
+
+                return cursor.fetchone()
+
+    def set_sheet_sync(self, date : str, status : str, detail : str = ""):
+        """Record the outcome of a sheet sync for `date`, replacing any earlier row.
+
+        Deliberately not routed through `execute()`: that method reads
+        `arguments[0]` as a card id on any INSERT, which would clobber
+        `last_id` with a date string.
+        """
+        with sqlite3.connect(self.db_name) as con:
+            with closing(con.cursor()) as cursor:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO sheet_sync (date, status, detail, synced_at) VALUES(?, ?, ?, ?)",
+                    (date, status, detail, datetime.now(timezone.utc).isoformat()))
+            con.commit()
 
     def execute(self, command : str, arguments=()):
         """Run a single SQL statement against `productivity.db`.

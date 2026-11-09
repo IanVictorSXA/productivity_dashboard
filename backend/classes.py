@@ -16,7 +16,10 @@ response.
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import bisect
+import logging
 from database import Database
+
+logger = logging.getLogger(__name__)
 
 total_time_format = "%H:%M:%S"
 time_format = "%I:%M:%S %p" # datetime.strptime("12:00:00 PM", time_format)
@@ -63,6 +66,8 @@ class Message(BaseModel):
     completed: bool | None = None # is type task object completed?
     paused: bool = True # is type task object completed?
     pos: int = 0 # position of task
+    source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
+    sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
 
 class Task:
     """A plain to-do item: base class for `Event` and `Duration`/`Timer` too.
@@ -81,14 +86,20 @@ class Task:
         self.completed = msg.completed
         self.pos = msg.pos
 
+        # Provenance for the Google Sheets sync. A NULL `source` on an old row
+        # normalizes to 'local', which is the safe direction: only 'sheet' cards
+        # can be deleted by a sync.
+        self.source = msg.source or "local"
+        self.sheet_key = msg.sheet_key
+
         self.deleted = False
         self.alerting = False
 
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this task's initial row into the `tasks` table."""
-        return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos) VALUES(?, ?, ?, ?, ?)", \
-                (self.id, self.label, self.completed, self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?)", \
+                (self.id, self.label, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
 
     def delete(self, msg : Message = None):
         """Soft-delete: mark deleted so it's excluded from future `retrieveAll()` reads."""
@@ -123,7 +134,8 @@ class Task:
 
     def get_ApiTask(self):
         """Serialize for the `GET /api` response's `tasks` list."""
-        task = dict(id=self.id, label=self.label, completed=self.completed)
+        task = dict(id=self.id, label=self.label, completed=self.completed,
+                    source=self.source, sheet_key=self.sheet_key)
         return task
 
     def __str__(self):
@@ -145,8 +157,8 @@ class Event(Task):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this event's initial row into the `events` table."""
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
 
     def edit(self, msg : Message):
         """Rename and/or reschedule the ring time."""
@@ -406,7 +418,57 @@ class TaskManager:
         self.durations : list[Duration] = []
 
         self.db = Database()
+        # Last sync outcome, published on `GET /api`; filled in by the call below.
+        self.sheet_sync : dict | None = None
         self.retrieve_data()
+        self.sync_sheets()
+
+    def sync_sheets(self, force : bool = False):
+        """Run the sheet sync and record its outcome on `self.sheet_sync`.
+
+        Every entry point goes through here — startup, and the manual button in
+        3f — so the status `get_ApiState()` publishes is always the last attempt,
+        without any caller having to remember to update it.
+        """
+        self.sheet_sync = self._run_sheet_sync(force)
+
+        return self.sheet_sync
+
+    def _run_sheet_sync(self, force : bool):
+        """Import today's column A from Google Sheets, if sync is switched on.
+
+        Returns a `{date, status, detail}` dict, where `status` is one of
+        `disabled`, `ok`, `skipped` (already synced today) or `error`.
+
+        Both the config check and the import are deferred to call time on
+        purpose: with `SHEETS_SYNC_ENABLED` false — every dev machine and the
+        whole test suite — `sheets.py` is never imported, so no Google library
+        is loaded and no network call can happen. `force` skips the
+        already-synced-today marker; that is the manual sync button's entry
+        point (3f), not the automatic one.
+
+        Nothing about Sheets is allowed to stop the dashboard, so this never
+        raises. `sync_day` has its own guard; this outer one covers the two
+        things that happen before it exists — a `sheets_config` that cannot be
+        read, and an `import sheets` that fails because the google libraries are
+        missing from a stale image (the real Group 3 failure).
+        """
+        try:
+            import sheets_config
+
+            if not sheets_config.SHEETS_SYNC_ENABLED:
+                # Reported rather than left blank: it is how the frontend knows to
+                # hide the manual sync button instead of showing a dead one (3f).
+                return {"date": None, "status": "disabled",
+                        "detail": "SHEETS_SYNC_ENABLED is false"}
+
+            import sheets
+
+            return sheets.sync_day(self, force=force)
+        except Exception as error:
+            logger.exception("Sheets: sync could not run — starting without it")
+
+            return {"date": None, "status": "error", "detail": f"{type(error).__name__}: {error}"}
     # id: int | None = None
     # command: str
     # task: str | None = None # label
@@ -438,6 +500,12 @@ class TaskManager:
                 command, arguments = self.ring(msg)
             case "stop_ring":
                 command, arguments = self.stop_ring(msg)
+            case "sync_sheets":
+                # The manual sync button (3f): same sync_day() as startup, but
+                # with the once-per-day marker bypassed via force=True. Already
+                # persists its own creates/deletes through process_command, so
+                # there's no (command, arguments) tuple to execute here.
+                self.sync_sheets(force=True)
             case "close":
                 pass
             case _:
@@ -447,7 +515,13 @@ class TaskManager:
             self.db.execute(command, arguments)
 
     def get_ApiState(self):
-        """Build the full `GET /api` response: every non-deleted card, plus the last-used id."""
+        """Build the full `GET /api` response: every non-deleted card, the last-used id, and the sync status.
+
+        `sheet_sync` is `{date, status, detail}` for the most recent sync
+        attempt, so a failure is diagnosable from the dashboard's own API rather
+        than by SSH-ing into the Pi to read the log. No frontend reads it yet;
+        the manual sync button (3f) is its first consumer.
+        """
         events = []
         durations = []
         tasks = []
@@ -465,7 +539,8 @@ class TaskManager:
             last_id = self.db.last_id,
             events=events,
             durations=durations,
-            tasks=tasks
+            tasks=tasks,
+            sheet_sync=self.sheet_sync
         )
 
     def retrieve_data(self):
