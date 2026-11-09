@@ -16,3 +16,4 @@ backend/productivity-dashboard-503701-03b014c70abf.json
 .env.*
 !.env.example
 .pytest_cache/
+scrum_guide.pdf

@@ -23,7 +23,11 @@ tm = TaskManager()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # Browsers treat localhost and 127.0.0.1 as different origins even though
+    # they're the same host; an SSH-tunneled or hand-typed 127.0.0.1 tab got a
+    # 400 "Disallowed CORS origin" on every POST (pause/play/edit/close/sync)
+    # while GET still worked, since only POST triggers a preflight.
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
