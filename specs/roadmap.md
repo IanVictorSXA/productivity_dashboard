@@ -14,7 +14,7 @@ The core loop (timers, stopwatches, events, persistence) is functionally built, 
 
 - [x] Full `validation.md` manual browser walkthrough (10 steps) re-run and passing — user-verified 2026-07-26
 
-See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements, and validation status per group. All groups (1–8) are complete and the manual walkthrough has been signed off, so Phase 0 is closed. **Phase 3 is the next phase to start.**
+See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements, and validation status per group. All groups (1–8) are complete and the manual walkthrough has been signed off, so Phase 0 is closed.
 
 ## Phase 1 — Core (done)
 
@@ -33,25 +33,25 @@ See `specs/2026-07-25-phase0-stabilization/` for the detailed plan, requirements
 
 See `specs/2026-07-26-phase2-new-stopwatches/` for plan, requirements, and validation.
 
-## Phase 3 — Google Sheets sync (read path, service account) + kiosk autostart
+## Phase 3 — Google Sheets sync (read path, service account) + kiosk autostart (done)
 
 Auth uses a **Google Cloud service account**, not an OAuth user-consent flow: the spreadsheet is shared with the service account's email, and the backend authenticates with a locally-stored key file. There is no interactive login step and no refresh-token dance, which is what makes the unattended start-of-day job viable on a headless Pi.
 
 Kiosk autostart (**3e**) is unrelated to Sheets but shares the same theme — the station should come up ready to use with no human intervention.
 
-- [ ] **3a.** Service-account auth on the backend: key file stored on-device (never committed), sheet shared with the service account email, authenticated client available to the app
-- [ ] **3b.** Start-of-day job: load the day's tasks from Sheets into the dashboard
-- [ ] **3c.** Start-of-day job: load events from Sheets into the dashboard
+- [x] **3a.** Service-account auth on the backend: key file stored on-device (never committed), sheet shared with the service account email, authenticated client available to the app
+- [x] **3b.** Start-of-day job: load the day's tasks from Sheets into the dashboard
+- [x] **3c.** Start-of-day job: load events from Sheets into the dashboard
 
   Source shape: a single tab named `Day`, column A only, where each non-empty cell is either an event or a task. Timers and stopwatches are never imported. The sheet is the source of truth for the cards it creates — a cell removed from column A removes the matching card from the dashboard.
 
-- [ ] **3d.** Handle failure paths (no network, missing/invalid key, sheet unreachable or unshared) without losing local data
-- [ ] **3e.** Kiosk mode starts automatically on every Pi 5 boot: backend and frontend services come up on their own, and the browser opens the dashboard full-screen with no chrome — no keyboard, mouse, or login step needed. Must survive a power cut, and recover if the browser or a service crashes.
-- [ ] **3f.** Manual sync button on the dashboard: re-run the reconciliation on demand, for when the day's agenda is edited in the sheet after the morning's automatic sync. Applies both additions and deletions; never touches cards the user created on the dashboard.
+- [x] **3d.** Handle failure paths (no network, missing/invalid key, sheet unreachable or unshared) without losing local data
+- [x] **3e.** Kiosk mode starts automatically on every Pi 5 boot: backend and frontend services come up on their own, and the browser opens the dashboard full-screen with no chrome — no keyboard, mouse, or login step needed. Must survive a power cut, and recover if the browser or a service crashes.
+- [x] **3f.** Manual sync button on the dashboard: re-run the reconciliation on demand, for when the day's agenda is edited in the sheet after the morning's automatic sync. Applies both additions and deletions; never touches cards the user created on the dashboard.
 
 The end-of-day upload of stats to Sheets moved to Phase 7, where the stats it writes are actually defined.
 
-See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validation.
+See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validation. Closed out 2026-11-08, user-verified on the real app and spreadsheet. **Phase 4 is next.**
 
 ## Phase 4 — Alarm sound
 

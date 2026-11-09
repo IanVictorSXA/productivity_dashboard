@@ -277,14 +277,14 @@ The only frontend work in the phase. Backend first, then UI.
 
 **Verify**: add a cell to column A, tap the button ⇒ the new card appears without a restart. Delete a cell, tap ⇒ that card disappears. Tap with the sheet unchanged ⇒ nothing changes at all. Tap with the network down ⇒ error feedback and **nothing deleted**. Confirmed working by the user on the real app (2026-11-08).
 
-## 11. Docs and spec updates
+## 11. Docs and spec updates — **COMPLETE**
 
-- Check off 3a–3f in `specs/roadmap.md`.
-- Update `CLAUDE.md`: Phase 3 status, and the next phase pointer (Phase 4 — alarm sound).
-- README: the Sheets configuration section (env vars, sharing the sheet with the service-account email, key file placement), **the one-time upgrade step — drop the old `events` and `tasks` tables (or delete `productivity.db`) before first run, since there is no migration and any cards in them are lost**, **the `Day`-tab/column-A contract and the fact that the sheet owns the cards it creates** (deleting a cell deletes the card; deleting a sheet card on the dashboard won't stick), and a pointer to `deploy/README.md` for kiosk install.
-- Fold the manual walkthrough results into `validation.md`, including any intentional deviations.
+- [x] Check off 3a–3f in `specs/roadmap.md`.
+- [x] Update `CLAUDE.md`: Phase 3 status, and the next phase pointer (Phase 4 — alarm sound). (`CLAUDE.md` is gitignored/untracked, so this doesn't show up in the diff or the commit — it's local-only.)
+- [x] README: the Sheets configuration section (env vars, sharing the sheet with the service-account email, key file placement), **the one-time upgrade step** (§ "One-time upgrade step"), **the `Day`-tab/column-A contract and the sheet-owns-its-cards rule** (§ "Google Sheets sync"), and a pointer to `deploy/README.md` for kiosk install.
+- [x] Fold the manual walkthrough results into `validation.md`: the user's general 2026-11-08 confirmation of the manual sync button is recorded there, with the gap between that and a fully itemized step 27–38 sign-off called out explicitly rather than papered over.
 
-**Verify**: a reader who has never seen the project can set up credentials and the kiosk from the README alone.
+**Verify**: a reader who has never seen the project can set up credentials and the kiosk from the README alone. (Not independently re-verified by a fresh reader in this pass — the README was written to be sufficient, but that claim itself hasn't been tested on someone new to the project.)
 
 ---
 
