@@ -119,6 +119,8 @@ Same shape as A3, and for the same reason: steps 11–18 need the Pi and the rea
 26c. **[x]** **It waits rather than launching.** With the backend URL pointed at a dead port the script blocked for 70s, logged its once-a-minute "still waiting" line at exactly 60s, and **no Chromium process ever started** — the readiness gate is real, not decorative.
 26d. **[x]** Host facts confirmed on the device rather than assumed: the session is **labwc on Wayland** (`labwc -m`, so the user autostart is additive), the binary is `/usr/bin/chromium` (no `chromium-browser` on trixie), autologin is `--autologin team` on `getty@tty1` with `graphical.target` default, and **screen blanking is already off** — no `swayidle` line in `~/.config/labwc/autostart`, no `swayidle` process.
 
+**Found on real-hardware reboot (2026-11-08), step 20 above**: autologin never unlocks the system keyring (no login password is entered), so Chromium's first touch of `libsecret` — its password manager / cookie-encryption key — blocked step 20 on an "unlock default keyring" dialog with no keyboard to answer it. Fixed by adding `--password-store=basic` to `chromium_arguments()` in `kiosk.sh`, which keeps that state in the kiosk's own profile dir instead of asking the OS keyring. `--check` confirms the flag reaches the command line; re-running step 20 from a cold `sudo reboot` is the only way to confirm the dialog itself is gone. See `deploy/README.md` § "Unlock default keyring" prompt.
+
 ## D. Manual walkthrough — manual sync button (3f)
 
 Run these on the touchscreen, tapping — not with a mouse on a desktop browser.

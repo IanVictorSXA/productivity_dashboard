@@ -69,6 +69,15 @@ chromium_arguments() {
     #                                  goes on now, while the flags are here
     # --no-first-run                   no welcome flow on a fresh profile
     # --disable-features=TranslateUI   no translate bar over the UI
+    # --password-store=basic           autologin never unlocks the system
+    #                                  keyring (no login password is ever
+    #                                  entered), so without this flag
+    #                                  Chromium's first touch of its
+    #                                  password manager / cookie-encryption
+    #                                  key pops a blocking "unlock default
+    #                                  keyring" dialog on every boot. This
+    #                                  keeps that state in the profile dir
+    #                                  instead of asking the OS keyring.
     printf '%s\n' \
         --kiosk \
         --noerrdialogs \
@@ -77,6 +86,7 @@ chromium_arguments() {
         --autoplay-policy=no-user-gesture-required \
         --no-first-run \
         --disable-features=TranslateUI \
+        --password-store=basic \
         "--user-data-dir=$PROFILE_DIR" \
         "$DASHBOARD_URL"
 }

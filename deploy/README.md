@@ -223,6 +223,19 @@ sudo raspi-config nonint do_blanking 1    # 1 disables, 0 enables — yes, that 
 Nothing in this repo touches it; it is already off on this device, and this is
 the check to re-run after a re-image.
 
+### "Unlock default keyring" prompt on every boot
+
+This is autologin, not a bug in this repo's units: a normal desktop login
+unlocks the keyring with the password you type at the greeter, and
+`getty@tty1` autologin never types one, so the keyring stays locked and the
+first thing that asks it for a secret — Chromium's password manager / cookie
+encryption key, via `libsecret` — blocks on a dialog with no keyboard to
+answer it. `kiosk.sh` passes `--password-store=basic`, which keeps that state
+in Chromium's own profile dir instead of asking the OS keyring, so the prompt
+never fires. Confirmed with `--check` (prints the flag in the command line);
+a from-cold `sudo reboot` is the only way to confirm the dialog itself is
+gone, since nothing here can safely drive the real screen.
+
 ### Day-to-day
 
 ```bash
