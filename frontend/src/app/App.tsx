@@ -9,8 +9,10 @@ import {
   CheckSquare,
   GripVertical,
   Pencil,
+  RefreshCw,
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
+import { Button } from "@/app/components/ui/button";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -56,7 +58,9 @@ type ApiDuration = {
 };
 type ApiTask  = { id: number; label: string; completed: boolean };
 type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean };
-type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[] };
+// status: disabled (sync off — hide the button), ok, skipped (already synced today), error
+type ApiSheetSync = { date: string | null; status: "disabled" | "ok" | "skipped" | "error"; detail: string };
+type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[]; sheet_sync?: ApiSheetSync | null };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
 type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean };
@@ -204,6 +208,8 @@ export default function App() {
   const [editingTask, setEditingTask] = useState<number | null>(null);
   const [dragOver,    setDragOver]   = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
+  const [sheetSync, setSheetSync] = useState<ApiSheetSync | null>(null);
+  const [syncing,   setSyncing]   = useState(false);
 
   // ── 1 Hz re-render trigger ──
   useEffect(() => {
@@ -251,8 +257,32 @@ export default function App() {
       setDurations([...loadedDurations, ...toCreate]);
       setEvents(loadedEvents);
       setTasks(loadedTasks);
+      setSheetSync(state?.sheet_sync ?? null);
       setLoading(false);
     })();
+  }, []);
+
+  // ── Manual sheet sync (3f): re-pull today's column A on demand ──
+  //
+  // Only events/tasks come from Sheets, so only those are re-fetched — the
+  // sync never touches durations/timers/stopwatches, which stay as the
+  // client already has them.
+  const handleSyncSheets = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await sendMessage({ command: "sync_sheets" });
+      const state = await fetchState();
+      if (state) {
+        _nextId = Math.max(_nextId, state.last_id ?? 0);
+        setEvents((state.events ?? []).map(e => ({
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+        })));
+        setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
+        setSheetSync(state.sheet_sync ?? null);
+      }
+    } finally {
+      setSyncing(false);
+    }
   }, []);
 
   // ── Alert check: event countdown hits zero ──
@@ -589,6 +619,13 @@ export default function App() {
     await sendMessage({ command: "close", current_time: nowTimeStr() });
   }, []);
 
+  // Last-result color for the manual sync button — "disabled" never reaches
+  // this, since the button isn't rendered in that case.
+  const sheetSyncColor =
+    sheetSync?.status === "ok" ? "#2fa84f" :
+    sheetSync?.status === "skipped" ? "#55607a" :
+    sheetSync?.status === "error" ? "#e03555" : "#3d6eea";
+
   // ── Clock display (only used for header) ──
   // Referencing `tick` here keeps the header updating every second.
   void tick;
@@ -619,6 +656,19 @@ export default function App() {
         </span>
         <span className="text-sm" style={{ color: "#7baff0" }}>{dateStr}</span>
         <span className="text-xl font-bold text-white">{timeStr}</span>
+        {sheetSync && sheetSync.status !== "disabled" && (
+          <Button
+            onClick={handleSyncSheets}
+            disabled={syncing}
+            size="icon"
+            variant="ghost"
+            className="w-9 h-9 rounded-full text-white hover:opacity-80 active:opacity-60 hover:bg-transparent"
+            style={{ background: sheetSyncColor }}
+            title={`Sheet sync: ${sheetSync.status}${sheetSync.detail ? " — " + sheetSync.detail : ""}`}
+          >
+            <RefreshCw size={18} className={syncing ? "animate-spin" : ""} />
+          </Button>
+        )}
         <button
           onClick={handleShutdown}
           className="w-9 h-9 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80 active:opacity-60"

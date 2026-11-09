@@ -4,7 +4,7 @@ Numbered groups are the intended implementation order. Each group should be inde
 
 Branch: `phase3-sheets-sync-kiosk`.
 
-**Dependency note**: Groups 1–9 are done. **Group 10 (the manual sync button) is the only implementation group left**, and Group 11 (docs) closes the phase out after it. Every host-side file the kiosk needs is written but deliberately not installed — the install commands are in `deploy/README.md` and the user runs them.
+**Dependency note**: Groups 1–10 are done. **Group 11 (docs) is the only thing left** to close the phase out. Every host-side file the kiosk needs is written but deliberately not installed — the install commands are in `deploy/README.md` and the user runs them.
 
 ---
 
@@ -267,16 +267,15 @@ Net declared list: `fastapi`, `uvicorn`, `tzlocal`, `pytest`, `gspread`, `google
 
 **Verify**: pull the power, plug it back in, touch nothing ⇒ the Pi lands on the full-screen dashboard with no cursor, no chrome, no login prompt. Kill Chromium ⇒ it relaunches.
 
-## 10. Manual sync button (3f) — *unblocked (5–7 are done)*
+## 10. Manual sync button (3f) — **COMPLETE**
 
 The only frontend work in the phase. Backend first, then UI.
 
-- **Backend**: add a `sync_sheets` case to `TaskManager.process_command` that calls `sync_day()` with the "already synced today" marker **bypassed** (see `requirements.md` § Manual sync for why the marker only gates the automatic trigger). Reuse the same guard from Group 6 so a failure returns a status instead of raising; record the attempt in `sheet_sync`. No new route — it rides the existing `POST /api`.
-- **Sync path**: confirm `sync_day()` takes a flag (or equivalent) for marker-bypass rather than being duplicated. Both halves of the diff apply — this button is how a mid-day sheet deletion reaches the dashboard.
-- **Frontend** (`frontend/src/app/App.tsx`): a single sync control in the header area, Radix/shadcn per tech-stack — **no new MUI**. Behavior: disabled while the request is in flight (a double-tap must not fire two imports); on completion, refresh board state the same way other commands do; show last-result feedback from the `sheet_sync` field added in Group 7. Hidden/disabled when sync is not enabled, so a dev machine shows no dead button.
-- Touch-friendly hit target — this is tapped on a 10" touchscreen, not clicked with a mouse.
+- **Backend** (done): `TaskManager.process_command` (`backend/classes.py`) gained a `sync_sheets` case that calls `self.sync_sheets(force=True)` — reusing the exact `sync_day()`/guard path from Groups 5–6 with the "already synced today" marker bypassed (see `requirements.md` § Manual sync). `sync_day()` already took the `force` flag from Group 5, so no duplication was needed. No new route — it rides the existing `POST /api`; `sync_sheets()` already persists its own creates/deletes via `process_command`, so there's no `(command, arguments)` tuple to execute afterward.
+- **Frontend** (done, `frontend/src/app/App.tsx`): a single icon button in the header, built on the existing shadcn `Button` component (`@/app/components/ui/button`) — no new MUI. States: hidden when `sheet_sync.status === "disabled"`; disabled + spinning icon while the request is in flight; background color keyed off the last `sheet_sync.status` (`ok` green, `skipped` grey, `error` red) with the full detail string in the `title` tooltip. On completion it re-`GET`s `/api` and replaces `events`/`tasks` from the response (durations/timers/stopwatches are left untouched, since sync never creates or deletes those).
+- Touch-friendly hit target: same 36px (`w-9 h-9`) circular size as the existing close button, which the kiosk validation already confirmed works on the touchscreen.
 
-**Verify**: add a cell to column A, tap the button ⇒ the new card appears without a restart. Delete a cell, tap ⇒ that card disappears. Tap with the sheet unchanged ⇒ nothing changes at all. Tap with the network down ⇒ error feedback and **nothing deleted**.
+**Verify**: add a cell to column A, tap the button ⇒ the new card appears without a restart. Delete a cell, tap ⇒ that card disappears. Tap with the sheet unchanged ⇒ nothing changes at all. Tap with the network down ⇒ error feedback and **nothing deleted**. Confirmed working by the user on the real app (2026-11-08).
 
 ## 11. Docs and spec updates
 

@@ -500,6 +500,12 @@ class TaskManager:
                 command, arguments = self.ring(msg)
             case "stop_ring":
                 command, arguments = self.stop_ring(msg)
+            case "sync_sheets":
+                # The manual sync button (3f): same sync_day() as startup, but
+                # with the once-per-day marker bypassed via force=True. Already
+                # persists its own creates/deletes through process_command, so
+                # there's no (command, arguments) tuple to execute here.
+                self.sync_sheets(force=True)
             case "close":
                 pass
             case _:
