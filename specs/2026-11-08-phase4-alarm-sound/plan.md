@@ -32,11 +32,13 @@ A third header button — after the sheet-sync button and before the close (✕)
 
 Nothing here touches the running app — this group only proves the asset and the two playback paths work, before anything depends on them.
 
-- [ ] Generate a short synthesized placeholder tone with `ffmpeg` (e.g. a sine wave, a few seconds long), saved to `frontend/src/assets/alarm.wav` (or `.mp3` — whichever plays cleanly in both `aplay` and the browser with the least fuss). Committed to the repo; no network fetch, no external license to track.
-- [ ] `backend/alarm_test.py`: a standalone script, not imported by `main.py`/`classes.py`/anything else in the app. Plays the asset through the Pi's system audio via `subprocess` + `aplay` for a short fixed duration, then exits. Run manually (`python backend/alarm_test.py`), not part of any test suite.
-- [ ] A frontend dev route/button (e.g. a `?test=alarm` query param or a button only rendered when a dev flag is set) that calls the exact same `Audio()` construction and `.play()`/loop settings the real alarm (Group 3) will use, playing the same asset for a short period. Not part of the normal dashboard UI.
-- [ ] **Verify on the dev machine first**: `aplay` plays the tone audibly (if this machine has audio output) or at minimum exits 0 with no error; the frontend dev route plays the tone in a desktop browser.
-- [ ] **Verify on the real Pi**: both the script and the dev route produce audible sound through the Pi's actual speaker, confirming the hardware path end to end before Group 3 wires anything into the dashboard.
+- [x] A 3-second synthesized placeholder tone (two 880 Hz beeps in a 1-second pattern, 3 repeats, 44.1 kHz mono 16-bit) generated with `ffmpeg` `aevalsrc`, saved as `frontend/src/assets/alarm.wav` (264 KB). WAV chosen over MP3: `aplay` plays it natively and Chromium plays it with no codec question. Committed; no network fetch.
+- [x] `backend/alarm_test.py`: standalone, imported by nothing. Plays the asset with `aplay -q -d 5`; optional `-D <alsa device>`; exit code is aplay's. Prints a hint to try `-D` if the default device fails.
+- [x] Frontend dev page at `/?test=alarm` (`frontend/src/app/AlarmTest.tsx`, chosen in `frontend/src/main.tsx` before `App` renders, so the dashboard and its polling are untouched). It calls `createAlarmAudio()` from the new `frontend/src/app/alarmSound.ts` — the single place the `Audio` settings (asset, `loop = true`) live, which Group 3 will import too. It tries to play **on load with no tap** (the same condition as a real ring on a fresh kiosk) and shows either "Playing…" or the browser's block reason, plus a "Play again" button.
+- [x] **Verify on the dev machine**: done (this machine *is* the Pi — see below).
+- [x] **Verify on the real Pi**: both tools heard through the Pi's actual speaker (user-confirmed 2026-11-09).
+
+**Status (2026-11-09)**: code written; the 82 backend tests still pass. Checked by machine: the asset plays with `aplay` exit 0 on the USB audio card; the production build emits it as a hashed local file (`assets/alarm-CaaFxJjI.wav`); headless Chromium on the dev page reports "Playing…" with `--autoplay-policy=no-user-gesture-required` and `NotAllowedError` without it. The user then confirmed by ear that both the script and the dev page are audible. Finding: on this Pi, `aplay`'s *default* ALSA device fails (`audio open error: Unknown error 524`, as do both HDMI cards, which have no sink); only `-D plughw:CARD=UACDemoV10,DEV=0` (the USB card, which is also PipeWire's default sink, the path Chromium uses) opens. So `python backend/alarm_test.py` with no flag fails here by design of the Pi's ALSA setup, not of the script.
 
 ## 3. Shared alarm engine (4c, 4d, 4e — the mechanism)
 
@@ -74,7 +76,7 @@ Also expected to already hold from Group 3's effect, verified explicitly against
 
 - [ ] Check off 4a–4f in `specs/roadmap.md`.
 - [ ] Update `CLAUDE.md`: Phase 4 status, and the next phase pointer (Phase 5 — voice: predefined commands). (`CLAUDE.md` is gitignored/untracked, so this doesn't show up in the diff or the commit — it's local-only, per the Phase 3 precedent.)
-- [ ] README: one line on the header reset button (what it clears, that it re-pulls from Sheets, that already-passed sheet events are not brought back), plus a short note on the alarm sound (where the asset lives, that it's a placeholder tone and how to swap it, and the `aplay`/dev-route test tools from Group 2), plus a note alongside the existing kiosk section that the autoplay flag is what makes the first ring of the day audible.
+- [ ] README: one line on the header reset button (what it clears, that it re-pulls from Sheets, that already-passed sheet events are not brought back), plus a short note on the alarm sound (where the asset lives, that it's a placeholder tone and how to swap it, and the `aplay`/dev-route test tools from Group 2 — including that on this Pi the default ALSA device fails, so the documented command is `python backend/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0`, with `aplay -L` for finding the device name), plus a note alongside the existing kiosk section that the autoplay flag is what makes the first ring of the day audible.
 - [ ] Fold the manual walkthrough results into `validation.md`.
 
 ---
