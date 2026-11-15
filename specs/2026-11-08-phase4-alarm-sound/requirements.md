@@ -40,7 +40,7 @@ Answered via `AskUserQuestion` before any file in this spec was written.
 
 **Both a Python script and a frontend dev route**, not just one:
 
-- **Python script** (`backend/alarm_test.py` or similar, run manually — not part of the app, not imported by anything): plays the bundled sound file through the Pi's system audio (ALSA, via `aplay`, invoked with `subprocess` — no new Python audio dependency) for a short, fixed duration. This is the check that the Pi's speaker/audio output actually works at all, independent of the browser.
+- **Python script** (`backend/experiments/alarm_test.py` or similar, run manually — not part of the app, not imported by anything): plays the bundled sound file through the Pi's system audio (ALSA, via `aplay`, invoked with `subprocess` — no new Python audio dependency) for a short, fixed duration. This is the check that the Pi's speaker/audio output actually works at all, independent of the browser.
 - **Frontend dev route**: a hidden/dev-only button or route that calls the exact same `Audio()`/HTML5 API call the real alarm will use (same asset, same loop/volume settings), playing for a short period. This is the check that the browser-based playback path — including the kiosk autoplay flag — works, since that's the path 4c–4e actually depend on, and a working speaker proves nothing about whether Chromium will let the page make noise.
 - Both are throwaway/manual-trigger tools, not part of the dashboard's normal UI. Neither is deleted after use — they stay as a fast way to re-check the audio path if it ever goes silent again (e.g. after a Chromium or OS update on the Pi).
 

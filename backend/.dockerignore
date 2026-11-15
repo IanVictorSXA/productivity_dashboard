@@ -5,9 +5,12 @@
 productivity.db
 date_id.txt
 
-__pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Scratch scripts for trying new functionality before it lands in the source.
+experiments/
 
 # Never let a service-account key reach an image layer.
 *.json

@@ -2,8 +2,8 @@
 
 Not imported by the app. Run by hand:
 
-    python backend/alarm_test.py              # system default audio device
-    python backend/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0
+    python backend/experiments/alarm_test.py              # system default audio device
+    python backend/experiments/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0
 
 It plays the bundled tone through `aplay` (ALSA), so it proves the speaker path
 without a browser. `aplay -L` lists the device names `-D` accepts.
@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ALARM = Path(__file__).resolve().parent.parent / "frontend" / "src" / "assets" / "alarm.wav"
+ALARM = Path(__file__).resolve().parents[2] / "frontend" / "src" / "assets" / "alarm.wav"
 PLAY_SECONDS = 5
 
 

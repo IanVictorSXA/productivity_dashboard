@@ -38,9 +38,9 @@ Run against the real app with the backend's database in a state worth wiping. St
 
 ### B. Asset + standalone test tools (4b)
 
-9. `python backend/alarm_test.py` on the dev machine: exits 0, plays audibly if the dev machine has audio output.
+9. `python backend/experiments/alarm_test.py` on the dev machine: exits 0, plays audibly if the dev machine has audio output.
 10. The frontend dev test route/button plays the same tone in a desktop browser.
-11. **On the Pi**: `python backend/alarm_test.py` plays audibly through the Pi's speaker.
+11. **On the Pi**: `python backend/experiments/alarm_test.py` plays audibly through the Pi's speaker.
 12. **On the Pi**: the frontend dev test route plays audibly in the kiosk Chromium.
 
 **Results (2026-11-09; steps 9–10 checked by machine from the Pi, steps 11–12 confirmed audibly by the user)**
@@ -49,7 +49,7 @@ Run against the real app with the backend's database in a state worth wiping. St
 |---|---|
 | 9 | **Exit status only.** `-D plughw:CARD=UACDemoV10,DEV=0` exits 0. With no `-D`, exits 1 (`Unknown error 524`): the default ALSA device is not the speaker on this Pi (HDMI cards have no sink). Audibility **not confirmed**. |
 | 10 | **Logic only.** Headless Chromium on `/?test=alarm`: "Playing for 5s (loop on)" with `--autoplay-policy=no-user-gesture-required`; `NotAllowedError` without it. No sound was heard. |
-| 11 | **Pass** (user, 2026-11-09): `python backend/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0` heard through the Pi's speaker. |
+| 11 | **Pass** (user, 2026-11-09): `python backend/experiments/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0` heard through the Pi's speaker. |
 | 12 | **Pass** (user, 2026-11-09): `/?test=alarm` heard in the kiosk Chromium. |
 
 ### C. The shared alarm engine (4c, 4d, 4e)
