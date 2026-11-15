@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
+import { useAlarmSound } from "@/app/alarmSound";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -210,6 +211,9 @@ export default function App() {
   const dragItem = useRef<number | null>(null);
   const [sheetSync, setSheetSync] = useState<ApiSheetSync | null>(null);
   const [syncing,   setSyncing]   = useState(false);
+  const [resetArmed, setResetArmed] = useState(false); // first tap done, waiting for the confirming second tap
+  const [resetting,  setResetting]  = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── 1 Hz re-render trigger ──
   useEffect(() => {
@@ -285,6 +289,43 @@ export default function App() {
     }
   }, []);
 
+  // ── Reset (4a): tap once to arm, tap again within 4 s to confirm ──
+  //
+  // Nothing is edited locally: the backend deletes/zeroes/re-syncs, then every
+  // card list is replaced from its answer, so the screen only ever shows what
+  // the database has.
+  useEffect(() => () => { if (resetTimer.current) clearTimeout(resetTimer.current); }, []);
+
+  const handleReset = useCallback(async () => {
+    if (!resetArmed) {
+      setResetArmed(true);
+      resetTimer.current = setTimeout(() => setResetArmed(false), 4000);
+      return;
+    }
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+    setResetArmed(false);
+    setResetting(true);
+    try {
+      await sendMessage({ command: "reset" });
+      const state = await fetchState();
+      if (state) {
+        _nextId = Math.max(_nextId, state.last_id ?? 0);
+        setDurations((state.durations ?? []).map(d => ({
+          id: d.id, label: d.label, subtype: d.subtype,
+          totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
+          startedAt: d.started_at, alerting: d.alerting,
+        })));
+        setEvents((state.events ?? []).map(e => ({
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+        })));
+        setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
+        setSheetSync(state.sheet_sync ?? null);
+      }
+    } finally {
+      setResetting(false);
+    }
+  }, [resetArmed]);
+
   // ── Alert check: event countdown hits zero ──
   useEffect(() => {
     const id = setInterval(() => {
@@ -314,6 +355,15 @@ export default function App() {
     }, 1000);
     return () => clearInterval(id);
   }, []);
+
+  // ── Alarm sound (4c–4e): one shared loop while anything is ringing ──
+  //
+  // Checked as `subtype === "timer"` rather than "any duration" so a stopwatch
+  // can never trigger sound, even if its `alerting` flag were ever set.
+  useAlarmSound(
+    events.some(e => e.alerting) ||
+    durations.some(d => d.subtype === "timer" && d.alerting)
+  );
 
   // ── Toggle running ──────────────────────────────────────────────────────────
   //
@@ -669,6 +719,18 @@ export default function App() {
             <RefreshCw size={18} className={syncing ? "animate-spin" : ""} />
           </Button>
         )}
+        {/* Always shown, even with sync disabled: reset still clears and zeroes without Sheets. */}
+        <Button
+          onClick={handleReset}
+          disabled={resetting}
+          variant="ghost"
+          className={`h-9 rounded-full text-white hover:opacity-80 active:opacity-60 hover:bg-transparent ${resetArmed ? "px-4 gap-2 font-semibold" : "w-9 px-0"}`}
+          style={{ background: resetArmed ? "#d9822b" : "#55607a" }}
+          title={resetArmed ? "Tap again to reset the day" : "Reset the day"}
+        >
+          <span className={`text-[11px] font-semibold tracking-tight ${resetting ? "animate-pulse" : ""}`}>RST</span>
+          {resetArmed && <span>Confirm?</span>}
+        </Button>
         <button
           onClick={handleShutdown}
           className="w-9 h-9 rounded-full flex items-center justify-center text-white transition-opacity hover:opacity-80 active:opacity-60"

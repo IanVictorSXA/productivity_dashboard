@@ -27,6 +27,11 @@ datetime_format = "%Y-%m-%d %I:%M:%S %p" # datetime.strptime("2023-01-01 12:00:0
 # parse ISO 8601: date_string = "2023-01-01T12:00:00Z" -
 # dt_object = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
 zero_timedelta = timedelta()
+
+# The six stopwatches the frontend auto-creates at boot. Must match MUTEX_LABELS in
+# frontend/src/app/App.tsx — kept in two places on purpose rather than adding an API field.
+DEFAULT_STOPWATCH_LABELS = ("Work", "Misc", "Eat", "Exercise", "Shower", "Fun")
+
 zero_datetime = datetime.strptime("00:00:00", total_time_format)
 
 # Converts an "HH:MM:SS" duration string (e.g. elapsed/remaining/total_time) into a timedelta.
@@ -65,6 +70,7 @@ class Message(BaseModel):
     ring_time: str | None = None # time the event should ring
     completed: bool | None = None # is type task object completed?
     paused: bool = True # is type task object completed?
+    alerting: bool = False # only ever set from a saved DB row, so a ringing card survives a restart; the frontend never sends it
     pos: int = 0 # position of task
     source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
     sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
@@ -93,7 +99,7 @@ class Task:
         self.sheet_key = msg.sheet_key
 
         self.deleted = False
-        self.alerting = False
+        self.alerting = msg.alerting
 
 
     def get_tuple_to_save(self):
@@ -259,6 +265,14 @@ class Duration(Task):
 
         return "UPDATE stopwatches SET deleted = 1, elapsed = ? WHERE id = ?", \
                 (msg.elapsed, self.id)
+
+    def zero(self):
+        """Stop the stopwatch and clear its elapsed time (used by the header reset button)."""
+        self.paused = True
+        self.elapsed = zero_timedelta
+
+        return "UPDATE stopwatches SET paused = 1, elapsed = ? WHERE id = ?", \
+                (self.get_elapsed_str(self.elapsed), self.id)
 
     def ring(self, msg: Message):
         """Freeze the stopwatch and mark it alerting (defensive: stopwatches don't ring today, but
@@ -506,6 +520,8 @@ class TaskManager:
                 # persists its own creates/deletes through process_command, so
                 # there's no (command, arguments) tuple to execute here.
                 self.sync_sheets(force=True)
+            case "reset":
+                self.reset()
             case "close":
                 pass
             case _:
@@ -513,6 +529,30 @@ class TaskManager:
         
         if command != "":
             self.db.execute(command, arguments)
+
+    def reset(self):
+        """Back to a clean start of day (the header reset button).
+
+        Deletes every event and task (sheet-sourced too — the final sync brings
+        back what the sheet still lists), every timer, and every stopwatch that
+        isn't one of the six defaults; the defaults are kept, paused, at zero.
+        Each change goes through the normal persisting path, so it survives a
+        reload. The sheet sync runs last and never raises, so a Sheets failure
+        cannot leave the reset half-applied.
+        """
+        # Copies: delete_helper removes cards from these lists as it goes.
+        for card in [*self.events, *self.tasks]:
+            self.process_command(Message(command="delete", id=card.id, type=card.type))
+
+        for card in list(self.durations):
+            if card.type_duration == "stopwatch" and card.label in DEFAULT_STOPWATCH_LABELS:
+                self.db.execute(*card.zero())
+            else:
+                # Duration/Timer.delete need the elapsed time; use the stored one.
+                self.process_command(Message(command="delete", id=card.id, type="duration",
+                                             elapsed=card.get_elapsed_str(card.elapsed)))
+
+        self.sync_sheets(force=True)
 
     def get_ApiState(self):
         """Build the full `GET /api` response: every non-deleted card, the last-used id, and the sync status.

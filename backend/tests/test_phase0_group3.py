@@ -556,3 +556,68 @@ class TestRingAlertingGuard:
 
         for record in timer_records:
             assert record["alerting"] == 1
+
+
+def _reload(test_db):
+    """A fresh TaskManager built from the DB, as after a backend restart."""
+    from classes import TaskManager
+    tm = TaskManager.__new__(TaskManager)
+    tm.tasks, tm.events, tm.durations = [], [], []
+    tm.db = test_db
+    tm.retrieve_data()
+    return tm
+
+
+class TestAlertingSurvivesRestart:
+    """Regression (found in Phase 4, step 18): `alerting` was written to the DB
+    but never read back. `Message` had no `alerting` field and `Task.__init__`
+    hard-coded `False`, so after a backend restart a ringing timer came back
+    paused at 00:00:00 with no alert (the frontend only rings running timers),
+    and a ringing event was only re-rung by the page's own countdown check."""
+
+    def test_ringing_timer_still_alerting_after_restart(self, test_task_manager, test_db):
+        test_task_manager.process_command(Message(
+            id=1, command="create", label="T", type="duration", type_duration="timer",
+            current_time="02:30:00 PM", total_time="00:00:02", remaining_time="00:00:02",
+            elapsed="00:00:00", total_elapsed="00:00:00", completed=False, paused=False, pos=0))
+        test_task_manager.process_command(Message(id=1, command="ring", type="duration", elapsed="00:00:02"))
+
+        timer = _reload(test_db).durations[0]
+        assert timer.alerting is True
+        assert timer.get_ApiDuration()["alerting"] is True
+        assert timer.get_ApiDuration()["started_at"] is None  # still frozen, not "running"
+
+    def test_ringing_event_still_alerting_after_restart(self, test_task_manager, test_db):
+        test_task_manager.process_command(Message(
+            id=2, command="create", label="E", type="event",
+            ring_time="2026-07-25T15:30:00Z", completed=False, pos=0))
+        test_task_manager.process_command(Message(id=2, command="ring", type="event", label="E"))
+
+        event = _reload(test_db).events[0]
+        assert event.alerting is True
+        assert event.get_ApiEvent()["alerting"] is True
+        assert event.get_ApiEvent()["completed"] is False
+
+    def test_dismissed_cards_stay_dismissed_after_restart(self, test_task_manager, test_db):
+        test_task_manager.process_command(Message(
+            id=1, command="create", label="T", type="duration", type_duration="timer",
+            current_time="02:30:00 PM", total_time="00:00:02", remaining_time="00:00:02",
+            elapsed="00:00:00", total_elapsed="00:00:00", completed=False, paused=False, pos=0))
+        test_task_manager.process_command(Message(
+            id=2, command="create", label="E", type="event",
+            ring_time="2026-07-25T15:30:00Z", completed=False, pos=0))
+        for cmd in ("ring", "stop_ring"):
+            test_task_manager.process_command(Message(id=1, command=cmd, type="duration", elapsed="00:00:02"))
+            test_task_manager.process_command(Message(id=2, command=cmd, type="event", label="E"))
+
+        reloaded = _reload(test_db)
+        assert reloaded.durations[0].alerting is False
+        assert reloaded.events[0].alerting is False
+        assert reloaded.events[0].completed is True
+
+    def test_new_cards_from_the_frontend_start_not_alerting(self, test_task_manager):
+        """The frontend's create payloads never carry `alerting`; it must default to False."""
+        test_task_manager.process_command(Message(
+            id=3, command="create", label="E", type="event",
+            ring_time="2026-07-25T15:30:00Z", completed=False, pos=0))
+        assert test_task_manager.events[0].alerting is False
