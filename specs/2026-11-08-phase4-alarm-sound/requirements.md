@@ -23,7 +23,7 @@ All six items (4a–4f) land on the single branch `phase4-alarm-sound` under thi
 
 ## Current state (confirmed by reading the code)
 
-- `alerting` is already a real, persisted boolean on both timers and events, with no backend changes needed for sound:
+- `alerting` is already a real, persisted boolean on both timers and events (*correction, 2026-11-15: persisted, but not restored after a backend restart until the fix described under Non-goals*):
   - **Events**: detected client-side every tick — `frontend/src/app/App.tsx:292` (`if (!e.alerting && !e.completed && msUntil(e.ringTime) <= 0)`), which sends `{command: "ring"}` and the backend's `Event.ring()` (`backend/classes.py:181-184`) persists `alerting = 1`.
   - **Timers**: detected client-side every tick — `App.tsx:306-310` (`d.subtype !== "timer" || d.alerting || d.startedAt === null`, then elapsed-vs-total check), sends `{command: "ring"}`, and `Timer`'s inherited/overridden `ring()` persists `alerting = 1` and freezes the running state.
   - **Dismissal**: both go through `stop_ring`, called from `onDismiss`/the task-complete handlers (`App.tsx:598-613`), which clears `alerting` (and, for events, also sets `completed = 1`).
@@ -98,7 +98,7 @@ No undo, no per-section reset, no change to how stopwatches mutually exclude, no
 - **No stopwatch sound** — stopwatches count up and never reach a terminal "ring" state (roadmap-stated, confirmed by code: no frontend path ever triggers `Stopwatch.ring()`).
 - **No per-card mute toggle** — Phase 8 (8d).
 - **No volume control, no different sounds per card type, no snooze.** One sound, one volume, plays until dismissed.
-- **No backend changes for the sound work (4b–4f).** `alerting` already exists and is already persisted correctly for both timers and events; the sound is a side effect of state that's already there. The one backend change in this phase is the `reset` command for 4a, below.
+- **No backend changes for the sound work (4b–4f) — as first written; one turned out to be needed (2026-11-15).** `alerting` already existed and was persisted, but it was never *restored* when the backend started (`Message` had no such field; `Task.__init__` hard-coded `False`), so a card ringing across a backend restart lost its alert. Fixed in `backend/classes.py` (2 lines, 4 tests); see `validation.md` § C. Everything else here still holds: no new column, no new command, no new API field — the sound is a side effect of state that's already there. The one backend change in this phase is the `reset` command for 4a, below.
 - **No new Python audio dependency** (`pygame`, `simpleaudio`, etc.) for the 4b test script — `aplay` via `subprocess` is already present on Raspberry Pi OS and is the standalone/system-level check 4b calls for.
 - **No change to how/when `ring`/`stop_ring` are triggered.** The detection logic (`msUntil(...) <= 0`, the timer elapsed-vs-total check) is unchanged; sound hooks onto the existing `alerting` flags, it doesn't change what sets them.
-- **No automated tests added** (including for the 4a `reset` command) — per standing guidance (CLAUDE.md §1) unless the user asks otherwise; validation is manual (`aplay` test + browser + real device), consistent with Phase 3's approach to anything that needs real hardware/audio output to verify.
+- **No automated tests for the audio itself or the 4a `reset` command** — they need real hardware or a browser; validation is manual (`aplay` test + browser + real device). The one exception is the restart-persistence fix above, which is backend logic and has four `pytest` regression tests.

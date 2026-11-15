@@ -2,9 +2,9 @@
 
 ## Automated
 
-None added, per standing guidance (CLAUDE.md §1) — the sound work is almost entirely frontend audio behavior and real-hardware playback, neither of which the existing `pytest` suite touches, and the 4a `reset` command is verified by hand in § A.
+The sound work is almost entirely frontend audio behavior and real-hardware playback, which `pytest` cannot touch, and the 4a `reset` command is verified by hand in § A. The one exception is the restart-persistence bug found in step 18, which got four backend regression tests (CLAUDE.md §3).
 
-- [ ] `python -m pytest backend/tests/ -q` — the existing 82 backend tests still pass, **unmodified**. The only backend change in this phase is the 4a `reset` command in `classes.py` (see `requirements.md` § Reset button); the sound work needs none (`alerting` already exists and is already correct). So this is the check that the new `reset` case and its constant didn't disturb any existing command.
+- [x] `python -m pytest backend/tests/ -q` — **140 pass** (2026-11-15): the 136 that existed after the Phase 3 post-close tests, unmodified, plus 4 new regression tests in `test_phase0_group3.py::TestAlertingSurvivesRestart` (see § C, step 18 — the sound work did need one small backend fix after all). The other backend change in this phase is the 4a `reset` command (`requirements.md` § Reset button).
 
 ## Manual walkthrough
 
@@ -63,7 +63,9 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 17. Dismiss the second (last) ringing card. Confirm the sound **stops immediately**.
 18. **On the Pi**, reload the dashboard while a card is still alerting (e.g. restart the backend with an un-dismissed alerting card persisted). Confirm the sound resumes on load without needing a fresh ring event.
 
-**Results (2026-11-15) — checked by machine, not by ear.** Headless Chromium (`--autoplay-policy=no-user-gesture-required`) against the Vite dev server, backend faked at the network layer (real DB and spreadsheet untouched; the real backend logged 0 POSTs). Every `play()`/`pause()` on any audio element was counted. Because headless Chromium makes no audible sound here, "playing" means the element's `paused` flag is false.
+**Steps 13–17 heard on the Pi's speaker (user-confirmed 2026-11-15):** timer rings, event rings, a second alarm does not layer, dismissing one of two keeps it playing, dismissing the last stops it. All pass.
+
+**Machine check (2026-11-15), before the above.** Headless Chromium (`--autoplay-policy=no-user-gesture-required`) against the Vite dev server, backend faked at the network layer (real DB and spreadsheet untouched; the real backend logged 0 POSTs). Every `play()`/`pause()` on any audio element was counted. Because headless Chromium makes no audible sound here, "playing" means the element's `paused` flag is false.
 
 | Step | Result |
 |---|---|
@@ -72,16 +74,22 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 | 15 | **Pass (logic).** Second timer ringing while the first rang: still 1 `play()`, 1 element, no `pause()`. |
 | 16 | **Pass (logic).** Three cards ringing (2 timers + 1 event); dismissed the first, then the second: still playing, 0 `pause()` calls. |
 | 17 | **Pass (logic).** Dismissed the last: `pause()` once, `currentTime` 0. |
-| 18 | **Pass in a browser, not on the Pi.** A page load with a timer and an event already `alerting` started one loop and sent no new `ring`. The real-backend restart and the Pi are still owed. |
+| 18 | **Superseded by the real-backend run below.** (The faked-backend version passed, but a faked backend cannot show what a real restart does — which is how the bug below was missed.) |
 | extra | A later timer ringing after everything was dismissed played again (2nd `play()`, same single element) and stopped again. A `play()` that the browser rejects (`NotAllowedError`) left the card ringing and raised no unhandled rejection. |
+
+**Steps 18–20 and 23 against the real backend code (2026-11-15) — and a bug they found.** Same headless Chromium, but the page talked to a copy of `backend/*.py` (own empty SQLite file, Sheets disabled, `TZ=UTC` like the Docker container) on port 8081, reached by redirecting the page's `localhost:8080` calls. The live backend on 8080, the real `productivity.db` and the real spreadsheet were never touched.
+
+- **Bug found by step 18's first real run.** After restarting the backend with a card mid-ring, the card was no longer alerting: `Message` had no `alerting` field and `Task.__init__` hard-coded `self.alerting = False`, so the `alerting` column was written but never read back. A ringing **event** came back un-alerting and only re-rang because the page's own countdown check noticed its time had passed and sent `ring` again. A ringing **timer** came back paused at 00:00:00 with no alert at all (the page only rings *running* timers), so its alarm was silently lost and nothing would ever dismiss it. A page reload *without* a backend restart was always fine, because the backend's memory kept the flag.
+- **Fix** (`backend/classes.py`, 2 lines): `Message.alerting: bool = False`, and `Task.__init__` uses `msg.alerting`. The frontend never sends `alerting`, so new cards still start at `False`; only rows loaded from the database carry it. Four regression tests: a ringing timer and a ringing event are still alerting after a simulated restart, dismissed cards stay dismissed, and a frontend-style create starts un-alerting.
+- **After the fix, 14/14 checks pass:** timer and event ring through the real backend (`alerting` persisted); backend killed and restarted mid-ring, page reloaded → both cards still ringing, sound resumes with one `play()`, and the page sends no new `ring`; dismiss one → still playing, dismiss the last → stops and rewinds; the backend shows the timer `alerting = false` and the event `completed = true, alerting = false`; a reload afterwards is silent and shows nothing ringing (step 20, both halves); and no browser console error and no traceback or 4xx/5xx in the backend log (step 23, for this run). One benign line excluded: Vite's dev server returns 404 for `/favicon.ico`, which this app has never had.
 
 ### D. Stopwatches stay silent (scope guard)
 
-19. Run all six mutex stopwatches through a normal start/pause/switch cycle. *(2026-11-15, machine check: a running `Work` stopwatch, and separately a stopwatch loaded with `alerting: true`, produced no `play()` and no audio element. The full start/pause/switch cycle by hand is still owed.)* Confirm none of them ever produce sound, blink red, or set `alerting` — unaffected by this phase, as expected.
+19. Run all six mutex stopwatches through a normal start/pause/switch cycle. *(2026-11-15, machine check, real backend: clicked Play/Pause through Work → Misc → Eat → Exercise → Shower → Fun, then paused Fun, started and paused Work. Exactly one was running after each switch, and there was no `play()`, no audio element, no ringing card and no `alerting` in the backend. Separately, a stopwatch loaded with `alerting: true` made no sound. Done through the real UI buttons by script, not by a finger.)* Confirm none of them ever produce sound, blink red, or set `alerting` — unaffected by this phase, as expected.
 
 ### E. Dismissal via task-complete path
 
-20. Let an event ring, then dismiss it via whatever path marks it completed (`onDismiss` / `dismissEvent` — the only event-dismiss path). *(2026-11-15, machine check: the event was dismissed last of three and the sound stopped; the card-shows-completed half was not separately asserted.)* Confirm the sound stops the same way a plain dismiss does, and the card shows completed rather than still alerting.
+20. Let an event ring, then dismiss it via whatever path marks it completed (`onDismiss` / `dismissEvent` — the only event-dismiss path). *(2026-11-15, machine check, real backend: the event was dismissed last, the sound stopped, the backend showed `completed = true, alerting = false`, and after a reload the card was not ringing and the page was silent.)* Confirm the sound stops the same way a plain dismiss does, and the card shows completed rather than still alerting.
 
 ### F. Bundling + kiosk autoplay (4f)
 
@@ -89,13 +97,22 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 22. **On the Pi**, with the kiosk freshly launched (fresh `sudo reboot` or a fresh Chromium relaunch) and **no prior tap anywhere on the screen that session**, trigger a real alarm. Confirm it is audible — this is the check that `--autoplay-policy=no-user-gesture-required` (already in `deploy/kiosk.sh` since Phase 3) actually prevents a silent first ring, now that there's a real sound to test it against.
 23. Confirm no error in the browser console and no traceback in `docker compose logs backend` across steps 13–22.
 
+**Results (2026-11-15).**
+
+| Step | Result |
+|---|---|
+| 21 | **Pass.** `vite build` (run inside the frontend container, output to `/tmp` there) emitted `assets/alarm-CaaFxJjI.wav` (264.68 kB) as a hashed local file; the built JS refers to it by that filename, with no `http(s)` audio URL anywhere. Note: the compose stack serves the Vite **dev** server on :5173, not this build, so the kiosk loads the asset from `/src/assets/alarm.wav` on localhost. Either way nothing comes from the network. |
+| 22 | **Pass, on the Pi, with a stand-in for a fresh boot.** A second Chromium was started with the exact flag list printed by `deploy/kiosk.sh --check` (including `--autoplay-policy=no-user-gesture-required`), a brand-new empty profile, and no tap. `navigator.userActivation.hasBeenActive` stayed `false`; the timer reached zero by itself, `play()` resolved ("allowed") and PipeWire listed a **Chromium** stream, both channels `[active]`, on the USB audio card `UACDemoV1.0`. Tapping the card stopped it. Audibility itself: **to be confirmed by ear by the user** (this machine is the Pi, but the script cannot hear). **Not done:** a real `sudo reboot`, so the autologin → labwc → `kiosk.sh` start-up chain was not re-run; this tested the Chromium flags and policy, which is what step 22 exists to check. |
+| 23 | **Pass for the runs above** (see the real-backend run in § C, and no console error or exception in the step 22 run). **Not covered:** the Docker backend's own log across a hand-driven session, since these runs used a separate backend on :8081 on purpose. |
+
+
 ## Merge bar
 
 - [ ] All of 4a–4f checked off in `specs/roadmap.md`.
 - [ ] Steps 1–23 above pass, with any intentional deviation documented in this file rather than silently accepted.
-- [ ] Existing 82 backend tests pass unmodified.
+- [x] Existing backend tests pass unmodified (136 before this work, 140 now with the 4 new restart tests).
 - [ ] The reset button works as specified (steps 1–8): confirm-by-second-tap, user-created timers/stopwatches gone, the six defaults at 0 and paused, events and tasks replaced by the sheet's, persisted across reload and backend restart.
-- [ ] No new backend code was needed for 4c/4d/4e beyond what's noted here as a deviation, if any — `alerting` detection and persistence are unchanged from pre-Phase-4 behavior.
+- [x] **Deviation, documented:** 4c–4e needed a 2-line backend fix, because `alerting` was persisted but never restored on startup (see § C, step 18). Detection (`msUntil`, the timer elapsed check) is unchanged.
 - [ ] Sound is global and single-instance: two simultaneous alarms never produce two overlapping/layered sounds (step 15).
 - [ ] Sound stops exactly when the *last* alerting card is dismissed, not before (steps 16–17).
 - [ ] Stopwatches never produce sound (step 19) — confirms the scope boundary in `requirements.md` § Non-goals held in practice, not just in the code's intent.

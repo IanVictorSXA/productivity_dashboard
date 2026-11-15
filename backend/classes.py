@@ -70,6 +70,7 @@ class Message(BaseModel):
     ring_time: str | None = None # time the event should ring
     completed: bool | None = None # is type task object completed?
     paused: bool = True # is type task object completed?
+    alerting: bool = False # only ever set from a saved DB row, so a ringing card survives a restart; the frontend never sends it
     pos: int = 0 # position of task
     source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
     sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
@@ -98,7 +99,7 @@ class Task:
         self.sheet_key = msg.sheet_key
 
         self.deleted = False
-        self.alerting = False
+        self.alerting = msg.alerting
 
 
     def get_tuple_to_save(self):
