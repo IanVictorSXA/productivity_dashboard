@@ -57,3 +57,28 @@ def test_task_manager(test_db):
     tm.db = test_db
 
     yield tm
+
+
+@pytest.fixture
+def frozen_clock(monkeypatch):
+    """Pin "now" to 2026-11-15 12:00 UTC inside the Sheets modules.
+
+    Sheet times like "1pm" are resolved against today's date, and the sync
+    drops events whose time has already passed, so without a fixed clock those
+    tests would give different answers depending on when they run.
+    """
+    import sheets
+    import sheets_parse
+    from datetime import datetime as real_datetime, timezone
+
+    fixed = real_datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc)
+
+    class FrozenDatetime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz) if tz else fixed.replace(tzinfo=None)
+
+    monkeypatch.setattr(sheets_parse, "datetime", FrozenDatetime)
+    monkeypatch.setattr(sheets, "datetime", FrozenDatetime)
+
+    return fixed

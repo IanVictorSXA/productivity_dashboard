@@ -291,3 +291,10 @@ The only frontend work in the phase. Backend first, then UI.
 ## Commit strategy
 
 One commit per group, per CLAUDE.md §6 (`Co-Authored-By: AI` footer, group referenced in the message). Groups 2–3 may reasonably land together (config + client are useless apart); Groups 8–9 may land together as the kiosk commit; Group 10's backend command and its UI may land together since neither is useful alone. No amends.
+
+
+## Post-close: automated test coverage (2026-11-15)
+
+Phase 3 closed with the Phase 0 suite only. Added `backend/tests/test_sheets_parse.py` (28 tests: event-vs-task grammar, am/pm and 24-hour forms, bad cells, header row, `cells` vs `items`, user-timezone resolution) and `backend/tests/test_sheets_sync.py` (26 tests: create/delete/leave-alone, local cards never deleted, failed read deletes nothing and does not mark the day done, never-raises guard, once-per-day marker and `force`, `sync_sheets` command, missing-library path, reset). `read_day` is faked and the clock frozen (`frozen_clock` in `conftest.py`), so no network, key file, or live spreadsheet is involved.
+
+**Bug found and fixed**: `_apply_diff` built its `owned` lookup once before the create loop and never added the cards it created, so two identical cells created two cards (the code comment already said they should produce one). It now tracks a `seen` set. The one-line behavior is covered by `test_duplicate_cells_make_one_card`.

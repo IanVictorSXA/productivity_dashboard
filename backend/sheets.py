@@ -292,11 +292,13 @@ def _apply_diff(task_manager, read: SheetRead) -> tuple[int, int, int]:
             logger.info("Sheets: deleted %s %r — its cell is gone from column A", card.type, key)
 
     created, past = 0, 0
+    seen = set(owned)  # also holds keys handled earlier in this loop, so a repeated cell is skipped
     for item in read.items:
         # Two identical cells produce one card; the cell text is the only key
         # there is, so a duplicate row is indistinguishable from the original.
-        if item.key in owned:
+        if item.key in seen:
             continue
+        seen.add(item.key)
 
         if item.type == "event" and _has_passed(item.ring_time, now):
             # Creating it would put a card on the board that rings the instant it
