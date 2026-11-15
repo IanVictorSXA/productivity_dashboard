@@ -102,22 +102,24 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 | Step | Result |
 |---|---|
 | 21 | **Pass.** `vite build` (run inside the frontend container, output to `/tmp` there) emitted `assets/alarm-CaaFxJjI.wav` (264.68 kB) as a hashed local file; the built JS refers to it by that filename, with no `http(s)` audio URL anywhere. Note: the compose stack serves the Vite **dev** server on :5173, not this build, so the kiosk loads the asset from `/src/assets/alarm.wav` on localhost. Either way nothing comes from the network. |
-| 22 | **Pass, on the Pi, with a stand-in for a fresh boot.** A second Chromium was started with the exact flag list printed by `deploy/kiosk.sh --check` (including `--autoplay-policy=no-user-gesture-required`), a brand-new empty profile, and no tap. `navigator.userActivation.hasBeenActive` stayed `false`; the timer reached zero by itself, `play()` resolved ("allowed") and PipeWire listed a **Chromium** stream, both channels `[active]`, on the USB audio card `UACDemoV1.0`. Tapping the card stopped it. Audibility itself: **to be confirmed by ear by the user** (this machine is the Pi, but the script cannot hear). **Not done:** a real `sudo reboot`, so the autologin → labwc → `kiosk.sh` start-up chain was not re-run; this tested the Chromium flags and policy, which is what step 22 exists to check. |
+| 22 | **Pass, on the Pi, with a stand-in for a fresh boot.** A second Chromium was started with the exact flag list printed by `deploy/kiosk.sh --check` (including `--autoplay-policy=no-user-gesture-required`), a brand-new empty profile, and no tap. `navigator.userActivation.hasBeenActive` stayed `false`; the timer reached zero by itself, `play()` resolved ("allowed") and PipeWire listed a **Chromium** stream, both channels `[active]`, on the USB audio card `UACDemoV1.0`. Tapping the card stopped it. **Heard by the user (2026-11-15): the fresh-kiosk first ring passes.** **Not done:** a real `sudo reboot`, so the autologin → labwc → `kiosk.sh` start-up chain was not re-run; this tested the Chromium flags and policy, which is what step 22 exists to check. |
 | 23 | **Pass for the runs above** (see the real-backend run in § C, and no console error or exception in the step 22 run). **Not covered:** the Docker backend's own log across a hand-driven session, since these runs used a separate backend on :8081 on purpose. |
 
 
 ## Merge bar
 
-- [ ] All of 4a–4f checked off in `specs/roadmap.md`.
-- [ ] Steps 1–23 above pass, with any intentional deviation documented in this file rather than silently accepted.
+**Open item, not a merge blocker:** a real `sudo reboot` (autologin → labwc → `kiosk.sh`) has not been re-run with the alarm in place.
+
+- [x] All of 4a–4f checked off in `specs/roadmap.md`.
+- [x] Steps 1–23 above pass (machine-checked or user-heard; the one gap is that a real reboot was not run, see step 22), with any intentional deviation documented in this file rather than silently accepted.
 - [x] Existing backend tests pass unmodified (136 before this work, 140 now with the 4 new restart tests).
-- [ ] The reset button works as specified (steps 1–8): confirm-by-second-tap, user-created timers/stopwatches gone, the six defaults at 0 and paused, events and tasks replaced by the sheet's, persisted across reload and backend restart.
+- [x] The reset button works as specified (steps 1–8): confirm-by-second-tap, user-created timers/stopwatches gone, the six defaults at 0 and paused, events and tasks replaced by the sheet's, persisted across reload and backend restart.
 - [x] **Deviation, documented:** 4c–4e needed a 2-line backend fix, because `alerting` was persisted but never restored on startup (see § C, step 18). Detection (`msUntil`, the timer elapsed check) is unchanged.
-- [ ] Sound is global and single-instance: two simultaneous alarms never produce two overlapping/layered sounds (step 15).
-- [ ] Sound stops exactly when the *last* alerting card is dismissed, not before (steps 16–17).
-- [ ] Stopwatches never produce sound (step 19) — confirms the scope boundary in `requirements.md` § Non-goals held in practice, not just in the code's intent.
-- [ ] The alarm asset is bundled, not fetched over the network, in the production build (step 21).
-- [ ] The kiosk's first ring of the day is audible with no prior screen interaction (step 22) — the one finding this phase owes back to Phase 3's forward-compat flag.
-- [ ] No scope creep beyond `requirements.md` — no per-card mute (Phase 8), no volume control, no stopwatch sound, no backend schema/API changes (the 4a `reset` command adds a command, not a column or response field).
-- [ ] `CLAUDE.md` updated with Phase 4 status and Phase 5 as next.
-- [ ] README documents the reset button, the alarm asset, the standalone test tools, and the kiosk autoplay dependency.
+- [x] Sound is global and single-instance: two simultaneous alarms never produce two overlapping/layered sounds (step 15).
+- [x] Sound stops exactly when the *last* alerting card is dismissed, not before (steps 16–17).
+- [x] Stopwatches never produce sound (step 19) — confirms the scope boundary in `requirements.md` § Non-goals held in practice, not just in the code's intent.
+- [x] The alarm asset is bundled, not fetched over the network, in the production build (step 21).
+- [x] The kiosk's first ring of the day is audible with no prior screen interaction (step 22, user-heard 2026-11-15, on a fresh Chromium with the kiosk flags rather than a real reboot) — the one finding this phase owes back to Phase 3's forward-compat flag.
+- [x] No scope creep beyond `requirements.md` — no per-card mute (Phase 8), no volume control, no stopwatch sound, no backend schema/API changes (the 4a `reset` command adds a command, not a column or response field).
+- [x] `CLAUDE.md` updated with Phase 4 status and Phase 5 as next.
+- [x] README documents the reset button, the alarm asset, the standalone test tools, and the kiosk autoplay dependency.

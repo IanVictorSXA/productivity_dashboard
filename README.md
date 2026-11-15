@@ -1,6 +1,6 @@
 # Productivity Dashboard
 
-A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–3 are complete; Phase 4, an audible alarm, is next).
+A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–3 are complete; Phase 4, the audible alarm, is built; the fresh-kiosk first ring is user-verified).
 
 ## Features
 
@@ -10,8 +10,10 @@ A distraction-free productivity station for a dedicated Raspberry Pi touchscreen
 - **Tasks** — a lightweight, drag-to-reorder checklist alongside the trackers, for quick day-of to-dos (not the project's focus — see "Not a task manager" in `specs/mission.md`).
 - **Persistent state** — all cards are backed by SQLite and restored on every backend restart. A same-day restart (e.g. a Pi reboot) preserves everything exactly as it was; state only resets once the calendar date rolls over (see `backend/date_id.txt` below).
 - **Google Sheets sync** — the day's events and tasks can be loaded automatically from a Google Sheet at startup, and re-pulled on demand with the sync button in the header. See "Google Sheets sync" below.
+- **Alarm sound** — when a timer or event hits zero, a looping tone plays until the last ringing card is dismissed. Stopwatches never make sound. See "Alarm sound" below.
+- **Reset button** — the "RST" button in the header clears the board back to a clean start of day (see below).
 - **Kiosk autostart** — on the Pi, the dashboard comes up full-screen with no keyboard, mouse, or login step after a reboot or power cut. See `deploy/README.md`.
-- **Planned**: an audible alarm when a timer or event hits zero (Phase 4); full voice control — wake word → speech-to-text → intent → action (Phases 5–6); historical analytics plus the end-of-day upload to Sheets (Phase 7); and dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 8).
+- **Planned**: full voice control — wake word → speech-to-text → intent → action (Phases 5–6); historical analytics plus the end-of-day upload to Sheets (Phase 7); and dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 8).
 
 ## Tech Stack
 
@@ -102,6 +104,27 @@ The dashboard can load the day's events and tasks from a Google Sheet — once a
 ### Using it
 
 The day's events and tasks load automatically once per day, the first time the backend starts that day. To pick up a sheet edit made later the same day — without restarting — tap the sync button in the dashboard's header (hidden when sync is disabled). It's disabled while a sync is in flight, and its color reflects the last attempt's result (also available as its tooltip): green for success, grey for "already synced, nothing to do", red for a failure. A failure (network down, sheet unshared, wrong id/tab) never deletes anything — the dashboard keeps working with local data and logs the problem for the next attempt to retry.
+
+## Reset button
+
+The **RST** button in the header (between the sync button and ✕) returns the dashboard to a clean start of day. Tap once and it turns amber and reads "Confirm?"; tap again within ~4 seconds to go ahead, or do nothing and it reverts without touching anything. On confirm, the backend:
+
+- deletes every timer, every stopwatch that isn't one of the six defaults, and every event and task;
+- keeps the six default stopwatches (`Work`, `Misc`, `Eat`, `Exercise`, `Shower`, `Fun`) but pauses them and sets them to 0:00;
+- then re-pulls the day from Google Sheets (the same as the sync button), if sync is enabled.
+
+Sheet events whose time has already passed today are deleted and **not** brought back, because the sync skips events that are already over. With sync disabled the reset still clears and zeroes; it just has nothing to re-pull. The button is always shown, even when the sync button is hidden.
+
+## Alarm sound
+
+When any timer or event is ringing, one shared tone loops until the last ringing card is dismissed (dismissing one of two leaves it playing). It never layers if a second alarm starts, and stopwatches never trigger it.
+
+- **The asset** is `frontend/src/assets/alarm.wav`, a 3-second synthesized placeholder tone (two 880 Hz beeps). Vite bundles it into the build as a hashed local file, so nothing is fetched over the network at ring time. To swap it, replace that file (keep it `.wav`, or update the import in `frontend/src/app/alarmSound.ts`).
+- **The kiosk autoplay flag.** Browsers refuse to play sound before the page has been tapped. A kiosk that has just booted has had no tap, so the first ring of the day would be silent. `deploy/kiosk.sh` launches Chromium with `--autoplay-policy=no-user-gesture-required` to prevent that; if you change the kiosk's flags, keep it. See `deploy/README.md`.
+- **Test it without waiting for a timer:**
+  - Browser: open `/?test=alarm` (e.g. `http://localhost:5173/?test=alarm`). It tries to play on load with no tap, the same condition as a first ring, and says whether the browser allowed it.
+  - Speaker, outside the browser: `python backend/experiments/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0`. On this Pi the default ALSA device fails (`Unknown error 524`), so the `-D` flag is required; run `aplay -L` to find the device name on a different setup.
+- **A ringing card survives a backend restart.** The `alerting` flag is saved to and restored from the database, so a restart mid-ring comes back still ringing (and, on a page reload, sounding).
 
 ## Running the tests
 
@@ -199,6 +222,14 @@ Sent once when the app shuts down. It's a no-op on the backend — no cards are 
 ```
 
 Sent by the header sync button (see "Google Sheets sync" above). Re-runs the same reconciliation as the automatic startup sync, but bypasses the once-per-day marker. A no-op with `SHEETS_SYNC_ENABLED` unset. Never returns an error status to the HTTP caller — check `sheet_sync` on the next `GET /api` for the outcome.
+
+### Reset (whole board)
+
+```json
+{ "command": "reset" }
+```
+
+Sent by the header RST button after its second tap. Does its own persisting (like `sync_sheets`), so there is nothing else to send: soft-deletes every event, task, timer and non-default stopwatch, zeroes and pauses the six defaults, then runs a forced Sheets sync. Never fails because of Sheets; check `sheet_sync` on the next `GET /api`.
 
 ### GET /api response shape
 
