@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
+import { useAlarmSound } from "@/app/alarmSound";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -354,6 +355,15 @@ export default function App() {
     }, 1000);
     return () => clearInterval(id);
   }, []);
+
+  // ── Alarm sound (4c–4e): one shared loop while anything is ringing ──
+  //
+  // Checked as `subtype === "timer"` rather than "any duration" so a stopwatch
+  // can never trigger sound, even if its `alerting` flag were ever set.
+  useAlarmSound(
+    events.some(e => e.alerting) ||
+    durations.some(d => d.subtype === "timer" && d.alerting)
+  );
 
   // ── Toggle running ──────────────────────────────────────────────────────────
   //

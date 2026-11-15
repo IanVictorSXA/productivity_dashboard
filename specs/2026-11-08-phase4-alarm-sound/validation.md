@@ -63,13 +63,25 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 17. Dismiss the second (last) ringing card. Confirm the sound **stops immediately**.
 18. **On the Pi**, reload the dashboard while a card is still alerting (e.g. restart the backend with an un-dismissed alerting card persisted). Confirm the sound resumes on load without needing a fresh ring event.
 
+**Results (2026-11-15) — checked by machine, not by ear.** Headless Chromium (`--autoplay-policy=no-user-gesture-required`) against the Vite dev server, backend faked at the network layer (real DB and spreadsheet untouched; the real backend logged 0 POSTs). Every `play()`/`pause()` on any audio element was counted. Because headless Chromium makes no audible sound here, "playing" means the element's `paused` flag is false.
+
+| Step | Result |
+|---|---|
+| 13 | **Pass (logic).** One timer reaching zero → one `play()`, element playing, `loop = true`, no tap beforehand. |
+| 14 | **Pass (logic).** An event reaching its ring time joined the loop already running: still 1 `play()`, 1 element. |
+| 15 | **Pass (logic).** Second timer ringing while the first rang: still 1 `play()`, 1 element, no `pause()`. |
+| 16 | **Pass (logic).** Three cards ringing (2 timers + 1 event); dismissed the first, then the second: still playing, 0 `pause()` calls. |
+| 17 | **Pass (logic).** Dismissed the last: `pause()` once, `currentTime` 0. |
+| 18 | **Pass in a browser, not on the Pi.** A page load with a timer and an event already `alerting` started one loop and sent no new `ring`. The real-backend restart and the Pi are still owed. |
+| extra | A later timer ringing after everything was dismissed played again (2nd `play()`, same single element) and stopped again. A `play()` that the browser rejects (`NotAllowedError`) left the card ringing and raised no unhandled rejection. |
+
 ### D. Stopwatches stay silent (scope guard)
 
-19. Run all six mutex stopwatches through a normal start/pause/switch cycle. Confirm none of them ever produce sound, blink red, or set `alerting` — unaffected by this phase, as expected.
+19. Run all six mutex stopwatches through a normal start/pause/switch cycle. *(2026-11-15, machine check: a running `Work` stopwatch, and separately a stopwatch loaded with `alerting: true`, produced no `play()` and no audio element. The full start/pause/switch cycle by hand is still owed.)* Confirm none of them ever produce sound, blink red, or set `alerting` — unaffected by this phase, as expected.
 
 ### E. Dismissal via task-complete path
 
-20. Let an event ring, then dismiss it via whatever path marks it completed (`onDismiss` / the event-complete handler). Confirm the sound stops the same way a plain dismiss does, and the card shows completed rather than still alerting.
+20. Let an event ring, then dismiss it via whatever path marks it completed (`onDismiss` / `dismissEvent` — the only event-dismiss path). *(2026-11-15, machine check: the event was dismissed last of three and the sound stopped; the card-shows-completed half was not separately asserted.)* Confirm the sound stops the same way a plain dismiss does, and the card shows completed rather than still alerting.
 
 ### F. Bundling + kiosk autoplay (4f)
 

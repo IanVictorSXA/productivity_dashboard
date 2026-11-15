@@ -44,27 +44,33 @@ Nothing here touches the running app — this group only proves the asset and th
 
 One piece of frontend logic that turns "is anything alerting" into "is the sound playing," independent of what set `alerting` or which card it is. Timers and events already set `alerting` correctly (confirmed in `requirements.md` § Current state) — this group adds the one new side effect, not new detection logic.
 
-- [ ] A single `Audio` instance (module-level or a `useRef`, not per-card), `loop = true`, pointed at the Group 2 asset.
-- [ ] A derived boolean, recomputed each render/tick: "at least one event in `events` has `alerting === true`, or at least one duration in `durations` has `subtype === "timer" && alerting === true`." **Stopwatches are deliberately excluded** even though `DurationCard.alerting` exists on them too — the check is written as `subtype === "timer"`, not "any duration," so a defensive/future stopwatch `alerting` flag can never trigger sound by accident.
-- [ ] A `useEffect` keyed on that derived boolean: boolean goes false→true starts the loop (`.play()`); goes true→false stops and rewinds it (`.pause()` + `currentTime = 0`, so the next ring starts from the top rather than mid-loop). No-op on any render where the boolean doesn't change, so a second alarm starting while one is already ringing does not restart or layer the sound.
-- [ ] **Verify in a desktop browser first** (no Pi needed yet): start one timer, let it ring — sound starts. Start a second timer while the first is still ringing — sound doesn't restart or double up. Dismiss one, the other still rings — sound keeps playing. Dismiss the last one — sound stops.
+- [x] A single `Audio` instance (a `useRef` inside the new `useAlarmSound` hook in `frontend/src/app/alarmSound.ts`, created lazily on the first ring via the Group 2 `createAlarmAudio()`, so `loop = true` and the asset are still set in one place).
+- [x] A derived boolean, computed in `App.tsx` just before the toggle handlers and passed to the hook: "at least one event in `events` has `alerting === true`, or at least one duration in `durations` has `subtype === "timer" && alerting === true`." **Stopwatches are deliberately excluded** even though `DurationCard.alerting` exists on them too — the check is written as `subtype === "timer"`, not "any duration," so a defensive/future stopwatch `alerting` flag can never trigger sound by accident.
+- [x] A `useEffect` keyed on that derived boolean: boolean goes false→true starts the loop (`.play()`); goes true→false stops and rewinds it (`.pause()` + `currentTime = 0`, so the next ring starts from the top rather than mid-loop). No-op on any render where the boolean doesn't change, so a second alarm starting while one is already ringing does not restart or layer the sound.
+- [x] **Verify in a browser first** (no Pi needed yet; headless Chromium here, see status below): start one timer, let it ring — sound starts. Start a second timer while the first is still ringing — sound doesn't restart or double up. Dismiss one, the other still rings — sound keeps playing. Dismiss the last one — sound stops.
+
+**Status (2026-11-15)**: code written (`useAlarmSound` in `alarmSound.ts`, one call in `App.tsx`). The effect's cleanup does the stop (`pause()` + `currentTime = 0`), so "no-op when the boolean doesn't change" is React's own dependency check rather than hand-written logic. `play()` rejections (browser blocks it, or `AbortError` from a pause before it starts) are caught and logged with `console.warn`, so a blocked first ring leaves the card ringing visually and does not throw. Checked by machine, not by ear: a throwaway CDP script (kept in the session scratchpad, not committed) ran headless Chromium against the Vite dev server with the backend **faked at the network layer**, so the real `productivity.db` and spreadsheet were never touched (the real backend log showed 0 POSTs). 19/19 checks pass — results in `validation.md` § C. 136 backend tests pass; no backend change.
 
 ## 4. Wire it into the dashboard (4c, 4d)
 
 By this point the engine from Group 3 is already reacting to real `alerting` state — this group is mostly verification that nothing needs changing, plus any small adjustment the dev-browser pass in Group 3 surfaced.
 
-- [ ] Confirm a timer reaching zero (the existing `App.tsx:306-310` detection) produces sound with no code change beyond Group 3 — if it doesn't, the derived boolean in Group 3 is checking the wrong field and needs fixing here.
-- [ ] Confirm an event reaching its ring time (`App.tsx:292-294`) produces sound the same way.
-- [ ] Confirm a stopwatch never produces sound, even if `Stopwatch.ring()` were somehow reached (defensive check — nothing in the frontend calls it today, so this is "confirm it stays impossible," not "exercise a real path").
+- [x] Confirm a timer reaching zero (the existing `App.tsx:306-310` detection) produces sound with no code change beyond Group 3 — if it doesn't, the derived boolean in Group 3 is checking the wrong field and needs fixing here.
+- [x] Confirm an event reaching its ring time (`App.tsx:292-294`) produces sound the same way.
+- [x] Confirm a stopwatch never produces sound, even if `Stopwatch.ring()` were somehow reached (defensive check — nothing in the frontend calls it today, so this is "confirm it stays impossible," not "exercise a real path").
+
+**Status (2026-11-15)**: all three confirmed in the same headless run as Group 3 — a timer and an event each reached zero through the app's own detection code and started the one shared loop; a stopwatch arriving with `alerting: true` produced no `play()` and no audio element. **No change was needed beyond Group 3.** Not exercised: the real backend's `ring` persistence round trip (the faked backend just says 200), which Phase 0 Group 3 already covers in pytest.
 
 ## 5. Dismissal stops the sound (4e)
 
 Also expected to already hold from Group 3's effect, verified explicitly against the multi-alarm case since that's the one 4e's wording ("stops on dismissal") doesn't spell out on its own.
 
-- [ ] One alerting card, dismissed via tap (`onDismiss`) → sound stops immediately.
-- [ ] Two alerting cards (a timer and an event, or two timers) → dismissing the first leaves the sound playing (the second is still undismissed); dismissing the second stops it.
-- [ ] A card dismissed via the task-complete path for events (`App.tsx:598-603`, which also sets `completed = true`) stops the sound the same way a plain dismiss does.
-- [ ] Reload the page with a card still alerting (state restored from the backend) → sound resumes on load, since the derived boolean is computed from server-restored `alerting`, not from the moment `ring` was called.
+- [x] One alerting card, dismissed via tap (`onDismiss`) → sound stops immediately.
+- [x] Two alerting cards (a timer and an event, or two timers) → dismissing the first leaves the sound playing (the second is still undismissed); dismissing the second stops it.
+- [x] A card dismissed via the event path (`dismissEvent`, `App.tsx` ~line 647, which also sets `completed = true`; the "task-complete path" wording in the first draft of this plan was stale — there is only this one event-dismiss function) stops the sound the same way a plain dismiss does.
+- [x] Reload the page with a card still alerting (state restored from the backend) → sound resumes on load, since the derived boolean is computed from server-restored `alerting`, not from the moment `ring` was called.
+
+**Status (2026-11-15)**: verified in the same headless run, with three cards ringing (two timers, one event) dismissed one at a time: the sound kept playing after the first and second dismissals and stopped, rewound to 0, after the third. A page load with a timer and an event already `alerting` from the server started one loop with no new `ring` POST. **Still owed on the real Pi:** step 18 with a real backend restart, and ears-on confirmation (steps 13–18 here were checked through `play()`/`pause()` calls and the audio element's `paused` state, not through a speaker).
 
 ## 6. Bundling + kiosk autoplay verification (4f)
 
