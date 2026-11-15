@@ -10,7 +10,6 @@ import {
   GripVertical,
   Pencil,
   RefreshCw,
-  RotateCcw,
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
@@ -719,7 +718,7 @@ export default function App() {
           style={{ background: resetArmed ? "#d9822b" : "#55607a" }}
           title={resetArmed ? "Tap again to reset the day" : "Reset the day"}
         >
-          <RotateCcw size={18} className={resetting ? "animate-spin" : ""} />
+          <span className={`text-[11px] font-semibold tracking-tight ${resetting ? "animate-pulse" : ""}`}>RST</span>
           {resetArmed && <span>Confirm?</span>}
         </Button>
         <button

@@ -55,7 +55,7 @@ See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validati
 
 ## Phase 4 — Alarm sound
 
-- [x] **4a.** Reset button in the dashboard header (third button, top right): one tap-again-to-confirm action that removes the user-created timers and stopwatches, zeroes the six default stopwatches, deletes every event and task, then re-pulls the day from Google Sheets
+- [x] **4a.** Reset button in the dashboard header (third button, top right, labelled "RST"): one tap-again-to-confirm action that removes the user-created timers and stopwatches, zeroes the six default stopwatches, deletes every event and task, then re-pulls the day from Google Sheets
 - [ ] **4b.** Standalone test script that just plays the alarm sound for a short period — proves the sound asset and playback path work on the real Pi hardware before wiring it into any app logic
 - [ ] **4c.** Play an audible ring when a timer's countdown reaches zero
 - [ ] **4d.** Play the same ring when an event reaches its ring time

@@ -77,6 +77,7 @@ Any ringing card is cleared by this: ringing timers and events are deleted, so `
 
 ### The button
 
+- **Label**: the text "RST" (small, bold, inside the same 36px circle as the other header buttons) — not an icon. Chosen by the user on 2026-11-15 over the original `RotateCcw` icon. While the reset is in flight the text pulses.
 - **Position**: third button in the header's right-hand group, left to right: sheet-sync, **reset**, close (✕). The close button stays rightmost. When sync is disabled (`sheetSync.status === "disabled"`) the sync button is hidden as it is today, so the header shows two buttons — reset is always present.
 - **Confirmation: tap again.** The first tap changes the button into an obviously different "Confirm?" state; it reverts on its own after ~4 seconds with nothing done. A second tap inside the window performs the reset. Chosen over a modal so a stray touch on the kiosk can't wipe the day, without adding a dialog to a distraction-free screen.
 - **After the reset** the frontend refetches `GET /api` and replaces all its card lists from the response — it does not predict the outcome locally.

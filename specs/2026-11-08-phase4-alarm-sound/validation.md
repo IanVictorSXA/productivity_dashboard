@@ -14,7 +14,7 @@ Run against the actual app (backend + frontend), and — for the hardware-depend
 
 Run against the real app with the backend's database in a state worth wiping. Steps 1–7 can use a dev machine; use a throwaway or backed-up `productivity.db`, since this deletes cards for real.
 
-1. **Placement.** With sync enabled the header's right side reads: sync button, reset button, ✕ (✕ rightmost). With `SHEETS_SYNC_ENABLED` false the sync button is gone and reset and ✕ remain.
+1. **Placement.** With sync enabled the header's right side reads: sync button, reset button (labelled "RST", text not an icon — confirmed fitting the 36px circle in a 1024×600 screenshot, 2026-11-15), ✕ (✕ rightmost). With `SHEETS_SYNC_ENABLED` false the sync button is gone and reset and ✕ remain.
 2. **Set up a messy board**: two timers (one running, one left to ring), a user-created stopwatch with an arbitrary label, two of the six defaults with time on them (one running), a hand-made event in the future, a hand-made task, and whatever the sheet imported.
 3. **Tap once, then wait.** The button turns into the "Confirm?" state; after ~4 seconds it reverts and **nothing changed** — no card was touched.
 4. **Tap twice inside the window.** Afterwards: both timers and the custom stopwatch are gone; all six defaults are present, at 0:00, paused (the running one stopped); the hand-made event and task are gone; the sheet's tasks and still-future events are back, not completed, not alerting.

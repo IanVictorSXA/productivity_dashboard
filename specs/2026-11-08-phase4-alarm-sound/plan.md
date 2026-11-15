@@ -19,7 +19,7 @@ A third header button — after the sheet-sync button and before the close (✕)
 
 **Frontend** (`frontend/src/app/App.tsx`):
 
-- [x] A `Button` (the existing shadcn component, same as the sync button) in the header, between the sync button and the ✕, with a `lucide-react` reset icon (e.g. `RotateCcw`). Unlike the sync button it is **always shown**, including when `sheetSync.status === "disabled"` — reset still clears and zeroes without Sheets.
+- [x] A `Button` (the existing shadcn component, same as the sync button) in the header, between the sync button and the ✕, labelled with the text **"RST"** (changed 2026-11-15 from a `lucide-react` `RotateCcw` icon — the user wanted it to read as words; the in-flight state pulses the text instead of spinning an icon). Unlike the sync button it is **always shown**, including when `sheetSync.status === "disabled"` — reset still clears and zeroes without Sheets.
 - [x] Tap-again confirm: first tap puts the button in a visibly different "Confirm?" state (colour change plus text, sized for a finger); it drops back to normal by itself after ~4 seconds. Second tap inside that window sends `{ command: "reset" }`. Timer cleaned up on unmount and on confirm.
 - [x] After the command returns, refetch with `fetchState()` and replace `durations`, `events`, `tasks`, `sheetSync` and `_nextId` from the result — the same shape `handleSyncSheets` already uses, but also replacing `durations`, since reset changes those too. Disabled while in flight (reuse a `resetting` flag, like `syncing`).
 - [x] No card state is edited locally before the refetch — the backend is the source of truth for what survived — so the screen never shows a state the database does not have.
