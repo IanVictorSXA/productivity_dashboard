@@ -108,10 +108,10 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 
 ## Merge bar
 
-**Open item, not a merge blocker:** a real `sudo reboot` (autologin → labwc → `kiosk.sh`) has not been re-run with the alarm in place.
+**Real reboot, done (user, 2026-11-15):** after a real `sudo reboot` (autologin → labwc → `kiosk.sh`) the user created an event and its alarm rang. No open items.
 
 - [x] All of 4a–4f checked off in `specs/roadmap.md`.
-- [x] Steps 1–23 above pass (machine-checked or user-heard; the one gap is that a real reboot was not run, see step 22), with any intentional deviation documented in this file rather than silently accepted.
+- [x] Steps 1–23 above pass (machine-checked or user-heard; the real-reboot run is recorded under Merge bar), with any intentional deviation documented in this file rather than silently accepted.
 - [x] Existing backend tests pass unmodified (136 before this work, 140 now with the 4 new restart tests).
 - [x] The reset button works as specified (steps 1–8): confirm-by-second-tap, user-created timers/stopwatches gone, the six defaults at 0 and paused, events and tasks replaced by the sheet's, persisted across reload and backend restart.
 - [x] **Deviation, documented:** 4c–4e needed a 2-line backend fix, because `alerting` was persisted but never restored on startup (see § C, step 18). Detection (`msUntil`, the timer elapsed check) is unchanged.
@@ -119,7 +119,7 @@ Can be run in a desktop browser for steps 13–17; step 18 needs the Pi.
 - [x] Sound stops exactly when the *last* alerting card is dismissed, not before (steps 16–17).
 - [x] Stopwatches never produce sound (step 19) — confirms the scope boundary in `requirements.md` § Non-goals held in practice, not just in the code's intent.
 - [x] The alarm asset is bundled, not fetched over the network, in the production build (step 21).
-- [x] The kiosk's first ring of the day is audible with no prior screen interaction (step 22, user-heard 2026-11-15, on a fresh Chromium with the kiosk flags rather than a real reboot) — the one finding this phase owes back to Phase 3's forward-compat flag.
+- [x] The kiosk's first ring of the day is audible with no prior screen interaction (step 22, user-heard 2026-11-15, first on a fresh Chromium with the kiosk flags, then after a real reboot) — the one finding this phase owes back to Phase 3's forward-compat flag.
 - [x] No scope creep beyond `requirements.md` — no per-card mute (Phase 8), no volume control, no stopwatch sound, no backend schema/API changes (the 4a `reset` command adds a command, not a column or response field).
 - [x] `CLAUDE.md` updated with Phase 4 status and Phase 5 as next.
 - [x] README documents the reset button, the alarm asset, the standalone test tools, and the kiosk autoplay dependency.

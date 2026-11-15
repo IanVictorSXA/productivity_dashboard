@@ -62,7 +62,7 @@ See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validati
 - [x] **4e.** Sound keeps playing (or repeats) until the alert is dismissed, and stops on dismissal
 - [x] **4f.** Sound asset bundled locally — no network fetch at ring time
 
-Stopwatches count up and have no zero to reach, so they are out of scope here. See `specs/2026-11-08-phase4-alarm-sound/` for plan, requirements, and validation; the fresh-kiosk first ring was heard by the user (2026-11-15); a real reboot re-run is the one open item — see `validation.md` § F. Per-card muting of the sound is Phase 8 (**8d**).
+Stopwatches count up and have no zero to reach, so they are out of scope here. See `specs/2026-11-08-phase4-alarm-sound/` for plan, requirements, and validation; the fresh-kiosk first ring was heard by the user (2026-11-15); a real reboot was also run and the next event rang (2026-11-15) — see `validation.md` § F. Per-card muting of the sound is Phase 8 (**8d**).
 
 ## Phase 5 — Voice: predefined commands
 
