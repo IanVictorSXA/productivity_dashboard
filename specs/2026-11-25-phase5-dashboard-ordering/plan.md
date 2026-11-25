@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Nothing is built yet (spec written 2026-11-25).
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Groups 2–7 not started.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -12,11 +12,11 @@ Convention (CLAUDE.md): tests are added when behaviour changes, the full `python
 
 Prove how a card can be dragged by **mouse and by finger** on this Pi before any real feature code depends on it. Nothing here touches the running app's cards.
 
-- [ ] Dev page `/?test=drag` (same pattern as `/?test=alarm`: chosen in `frontend/src/main.tsx` before `App` renders), showing a short wrapping list of dummy cards, each with a `GripVertical` handle.
-- [ ] Two variants side by side: **(A)** native HTML5 drag from the handle (what tasks use today), **(B)** hand-written pointer events on the handle (`touch-action: none`, pointer capture, drop target found by position). Each variant logs the events it receives and shows the resulting order.
-- [ ] **Run on the touchscreen with a finger** (user) and with the mouse: does each variant lift, follow, and drop correctly? Does the page scroll instead of dragging? Does a stray tap on the card body start anything?
-- [ ] Also try the **existing task rows** by finger — the user has already reported they fail (5j); the probe records *how* (no events at all, or the page scrolls instead) so the fix targets the real cause.
-- [ ] Write the result into `requirements.md` Decision 4 (chosen mechanism, and why the other lost).
+- [x] (2026-11-25) Dev page `/?test=drag` (same pattern as `/?test=alarm`: chosen in `frontend/src/main.tsx` before `App` renders), showing a short wrapping list of dummy cards, each with a `GripVertical` handle.
+- [x] (2026-11-25) Variants side by side — built as **three** (C added: a replica of today's task rows, so the 5j failure is recorded without touching the real app): **(A)** native HTML5 drag from the handle (what tasks use today), **(B)** hand-written pointer events on the handle (`touch-action: none`, pointer capture, drop target found by position). Each variant logs the events it receives and shows the resulting order.
+- [x] *Scripted pre-check done 2026-11-25 (headless Chromium, **emulated** touch — not the real digitizer): mouse drag works in A, B and C; emulated touch works only in B. In A and C the browser fires `pointercancel` right after `touchstart`/`touchmove`, then no `dragstart` — the same shape as the user-reported 5j bug. This is a hint, not the result.* **Run on the touchscreen with a finger** (user) and with the mouse: does each variant lift, follow, and drop correctly? Does the page scroll instead of dragging? Does a stray tap on the card body start anything?
+- [x] Also try the **existing task rows** by finger — the user has already reported they fail (5j); the probe records *how* (no events at all, or the page scrolls instead) so the fix targets the real cause.
+- [x] (2026-11-25: finger run — only B works; A and C fail and open the context menu) Write the result into `requirements.md` Decision 4 (chosen mechanism, and why the other lost).
 
 ## 2. Backend: order, persisted (5h — backend half)
 
