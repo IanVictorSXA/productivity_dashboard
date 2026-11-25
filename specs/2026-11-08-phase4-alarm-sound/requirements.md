@@ -19,7 +19,7 @@ All six items (4a–4f) land on the single branch `phase4-alarm-sound` under thi
 
 **Stopwatches are explicitly out of scope** (they count up, never reaching zero — per roadmap). `backend/classes.py` already has a defensive `Stopwatch.ring()`/`stop_ring()` (comment: "stopwatches don't ring today"), but nothing in the frontend ever calls it, so stopwatches never set `alerting = true` in practice. The alarm-sound trigger is written to only ever look at events and timers, not "any card with `alerting`", so this stays true even if that changes later.
 
-**Per-card mute is Phase 8 (8d), not here.** This phase ships one global sound with no mute control.
+**Per-card mute is Phase 5 (5d), not here.** This phase ships one global sound with no mute control.
 
 ## Current state (confirmed by reading the code)
 
@@ -96,7 +96,7 @@ No undo, no per-section reset, no change to how stopwatches mutually exclude, no
 ## Non-goals
 
 - **No stopwatch sound** — stopwatches count up and never reach a terminal "ring" state (roadmap-stated, confirmed by code: no frontend path ever triggers `Stopwatch.ring()`).
-- **No per-card mute toggle** — Phase 8 (8d).
+- **No per-card mute toggle** — Phase 5 (5d).
 - **No volume control, no different sounds per card type, no snooze.** One sound, one volume, plays until dismissed.
 - **No backend changes for the sound work (4b–4f) — as first written; one turned out to be needed (2026-11-15).** `alerting` already existed and was persisted, but it was never *restored* when the backend started (`Message` had no such field; `Task.__init__` hard-coded `False`), so a card ringing across a backend restart lost its alert. Fixed in `backend/classes.py` (2 lines, 4 tests); see `validation.md` § C. Everything else here still holds: no new column, no new command, no new API field — the sound is a side effect of state that's already there. The one backend change in this phase is the `reset` command for 4a, below.
 - **No new Python audio dependency** (`pygame`, `simpleaudio`, etc.) for the 4b test script — `aplay` via `subprocess` is already present on Raspberry Pi OS and is the standalone/system-level check 4b calls for.

@@ -1,6 +1,6 @@
 # Productivity Dashboard
 
-A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–4 are complete, including the audible alarm; Phase 5, voice control, is next).
+A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–4 are complete, including the audible alarm; Phase 5, dashboard interaction and ordering, is next; voice control is parked).
 
 ## Features
 
@@ -13,7 +13,7 @@ A distraction-free productivity station for a dedicated Raspberry Pi touchscreen
 - **Alarm sound** — when a timer or event hits zero, a looping tone plays until the last ringing card is dismissed. Stopwatches never make sound. See "Alarm sound" below.
 - **Reset button** — the "RST" button in the header clears the board back to a clean start of day (see below).
 - **Kiosk autostart** — on the Pi, the dashboard comes up full-screen with no keyboard, mouse, or login step after a reboot or power cut. See `deploy/README.md`.
-- **Planned**: full voice control — wake word → speech-to-text → intent → action (Phases 5–6); historical analytics plus the end-of-day upload to Sheets (Phase 7); and dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 8).
+- **Planned**: dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 5); historical analytics plus the end-of-day upload to Sheets (Phase 6); a local LLM on the AI HAT+2 with a daily productivity report (Phase 7). Full voice control — wake word → speech-to-text → intent → action — is still the long-term goal but is parked, with no phase number yet.
 
 ## Tech Stack
 
