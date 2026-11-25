@@ -49,7 +49,7 @@ Kiosk autostart (**3e**) is unrelated to Sheets but shares the same theme — th
 - [x] **3e.** Kiosk mode starts automatically on every Pi 5 boot: backend and frontend services come up on their own, and the browser opens the dashboard full-screen with no chrome — no keyboard, mouse, or login step needed. Must survive a power cut, and recover if the browser or a service crashes.
 - [x] **3f.** Manual sync button on the dashboard: re-run the reconciliation on demand, for when the day's agenda is edited in the sheet after the morning's automatic sync. Applies both additions and deletions; never touches cards the user created on the dashboard.
 
-The end-of-day upload of stats to Sheets moved to Phase 6, where the stats it writes are actually defined.
+The end-of-day upload of stats to Sheets moved to Phase 8, where the stats it writes are actually defined.
 
 See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validation. Closed out 2026-11-08, user-verified on the real app and spreadsheet.
 
@@ -64,47 +64,66 @@ See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validati
 
 Stopwatches count up and have no zero to reach, so they are out of scope here. See `specs/2026-11-08-phase4-alarm-sound/` for plan, requirements, and validation; the fresh-kiosk first ring was heard by the user (2026-11-15); a real reboot was also run and the next event rang (2026-11-15) — see `validation.md` § F. Per-card muting of the sound is Phase 5 (**5d**).
 
-## Phase 5 — Dashboard interaction & ordering
+## Phase 5 — Dashboard layout & ordering
 
-Presentation-layer work on the existing cards: manual ordering, stable layout, muting, and order that survives a restart. No new tracking categories.
+Presentation-layer work on the existing cards: manual ordering by a grip handle, stable layout, muting, and order that survives a restart. No new tracking categories. Stopwatches and timers share one "Tasks Duration" list, so 5a/5b are one drag mechanism. **Cards never move by themselves** — the earlier "promotion" idea (old 5e) was dropped on 2026-11-25 in favour of a red pause button.
 
-- [ ] **5a.** Drag-to-reorder stopwatches within the stopwatch section
-- [ ] **5b.** Drag-to-reorder timers within the timer section
+- [ ] **5a.** Drag-to-reorder stopwatches by a grip handle (the six-dot icon the task rows already have), with a mouse **or a finger** on the touchscreen
+- [ ] **5b.** Drag-to-reorder timers, same handle and mechanism
 - [ ] **5c.** Cards keep a fixed size — a card must not grow or shrink as the numbers inside it change (e.g. `09:59` → `10:00`, or crossing into hours)
-- [ ] **5d.** Mute toggle on timers and events: a clickable mute icon on the card. Muted cards make no sound but still blink/alert visually and still require dismissal
-- [ ] **5e.** Play/resume promotion: starting or resuming a stopwatch or timer moves it toward the front of its section — placed immediately after the last card that is already running, or first if nothing is running
+- [ ] **5d.** Mute toggle on timers and events: a clickable mute icon on the card, persisted. Muted cards make no sound but still blink/alert visually and still require dismissal. (Stopwatches get theirs in Phase 6.)
+- [ ] **5e.** A running stopwatch or timer shows a **red** pause button, so what is running is visible at a glance. Replaces "play/resume promotion": no card ever moves by itself, only by the user's drag
 - [ ] **5f.** Events are always sorted by increasing ring time (soonest first). Events are **not** manually reorderable; their order is derived from their times
 - [ ] **5g.** Tasks marked complete move to the end of the task list
-- [ ] **5h.** Order is persisted, so stopwatches, timers, and tasks come back in the same order after a reload or backend restart
+- [ ] **5h.** Order is persisted, so stopwatches, timers, and tasks come back in the same order after a reload or backend restart (this also fixes the task `reorder` command, which the backend never implemented)
+- [ ] **5i.** Each event shows, below its countdown, the hour and minute it will ring, in small gray print
+- [ ] **5j.** Fix: task reorder works by finger on the touchscreen (today it only works with a mouse); tasks use the same drag mechanism as the duration cards
 
-## Phase 6 — Historical analytics
+See `specs/2026-11-25-phase5-dashboard-ordering/` for plan, requirements, and validation (branch `phase5-dashboard-ordering`).
+
+## Phase 6 — Goals, limits & sheet cards
+
+Timers and stopwatches gain optional targets, a choice of exclusivity, and a second source: the Google Sheet. Decisions already made are recorded in `specs/2026-11-25-phase5-dashboard-ordering/requirements.md` § Handed to later phases; the **timer-goal display** and the **sheet-cell disambiguation** still need to be asked when this phase starts.
+
+- [ ] **6a.** "Mutually exclusive" checkbox on timer and stopwatch creation, ticked by default: one pool — starting any exclusive card pauses every other running exclusive card
+- [ ] **6b.** Optional **maximum** on a stopwatch (less is better): time left and the maximum shown below the time in small gray print; reaching it plays one short negative chime, no dismissal, and turns the outline red while the stopwatch keeps running
+- [ ] **6c.** Optional **goal** on a timer (more is better): time elapsed and the goal shown below the time in small gray print; reaching it plays one short positive chime, no dismissal, and turns the outline green (exact display behaviour to be settled)
+- [ ] **6d.** Mute button on stopwatches that have a maximum
+- [ ] **6e.** Load timers and stopwatches from the Google Sheet alongside tasks and events: a cell ending in a duration is a timer (`work 2h`), one ending in a duration plus `max` is a stopwatch (`shower 30m max`), anything else is a task
+
+## Phase 7 — Custom alert sounds
+
+- [ ] **7a.** Replace the placeholder negative and positive chimes (Phase 6) with chosen sounds
+- [ ] **7b.** Decide whether the main alarm sound is also customizable, and per what (to be scoped when the phase starts)
+
+## Phase 8 — Historical analytics
 
 Includes the end-of-day Sheets upload (which lived in Phase 3 before it was renumbered) — writing history is grouped with the analytics that consume it, so the schema is designed once.
 
-- [ ] **6a.** End-of-day job: upload that day's stats to a Google Sheet
-- [ ] **6b.** Daily stats: include exercise/shower/fun time and total tracked time in the existing stats view
-- [ ] **6c.** Daily stats: compute and display a simple per-category breakdown (no scoring yet)
-- [ ] **6d.** Daily productivity score (simple formula: e.g. work vs. waste ratio)
-- [ ] **6e.** Weekly summary view
-- [ ] **6f.** Monthly trend view
-- [ ] **6g.** Historical charts (recharts) sourced from Sheets history
+- [ ] **8a.** End-of-day job: upload that day's stats to a Google Sheet
+- [ ] **8b.** Daily stats: include exercise/shower/fun time and total tracked time in the existing stats view
+- [ ] **8c.** Daily stats: compute and display a simple per-category breakdown (no scoring yet)
+- [ ] **8d.** Daily productivity score (simple formula: e.g. work vs. waste ratio)
+- [ ] **8e.** Weekly summary view
+- [ ] **8f.** Monthly trend view
+- [ ] **8g.** Historical charts (recharts) sourced from Sheets history
 
-## Phase 7 — Local AI
+## Phase 9 — Local AI
 
-- [ ] **7a.** Local LLM running on the AI HAT+2
-- [ ] **7b.** Daily AI-generated productivity report
-- [ ] **7c.** Smart productivity recommendations based on historical trends
+- [ ] **9a.** Local LLM running on the AI HAT+2
+- [ ] **9b.** Daily AI-generated productivity report
+- [ ] **9c.** Smart productivity recommendations based on historical trends
 
 ## Parked — Voice (no phase number yet)
 
-Voice control is still the mission's long-term goal (`mission.md`, pillar 4), but it was retired from the numbered plan on 2026-11-25 to make room for dashboard polish, analytics and local AI first. Nothing below is scheduled; a number will be assigned when it is picked up again, most likely after Phase 7, since natural-language voice builds on the local LLM.
+Voice control is still the mission's long-term goal (`mission.md`, pillar 4), but it was retired from the numbered plan on 2026-11-25 to make room for dashboard polish, analytics and local AI first. Nothing below is scheduled; a number will be assigned when it is picked up again, most likely after Phase 9, since natural-language voice builds on the local LLM.
 
 - [ ] **Wake-word detection** running locally on the Pi
 - [ ] **Speech-to-text pipeline** (Whisper) wired to the wake-word trigger
 - [ ] **Predefined command set:** start/pause/resume a stopwatch by name
 - [ ] **Predefined command set:** create a timer/event ("create a meeting in 30 minutes") — needs its own decisions on naming an event and speaking a time
 - [ ] **Audible/visual confirmation** of recognized commands
-- [ ] **Natural-language intent detection** replacing/extending the predefined command set (needs 7a)
-- [ ] **Voice query support** (e.g. "how much have I worked today?", "what's on my schedule?") (needs 7a)
+- [ ] **Natural-language intent detection** replacing/extending the predefined command set (needs 9a)
+- [ ] **Voice query support** (e.g. "how much have I worked today?", "what's on my schedule?") (needs 9a)
 
-The predefined-command half already has a written spec (`specs/2026-11-15-phase5-voice-commands/`, formerly Phase 5) and mic/wake-word/Whisper probe scripts, committed on branch `phase5-voice-commands` and not merged. Phase 7 (Local AI) does not depend on any of it.
+The predefined-command half already has a written spec (`specs/2026-11-15-phase5-voice-commands/`, formerly Phase 5) and mic/wake-word/Whisper probe scripts, committed on branch `phase5-voice-commands` and not merged. Phase 9 (Local AI) does not depend on any of it.

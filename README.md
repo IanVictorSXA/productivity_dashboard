@@ -13,7 +13,7 @@ A distraction-free productivity station for a dedicated Raspberry Pi touchscreen
 - **Alarm sound** — when a timer or event hits zero, a looping tone plays until the last ringing card is dismissed. Stopwatches never make sound. See "Alarm sound" below.
 - **Reset button** — the "RST" button in the header clears the board back to a clean start of day (see below).
 - **Kiosk autostart** — on the Pi, the dashboard comes up full-screen with no keyboard, mouse, or login step after a reboot or power cut. See `deploy/README.md`.
-- **Planned**: dashboard ordering/muting improvements — drag-to-reorder cards, fixed-size cards, mutable timers and events (Phase 5); historical analytics plus the end-of-day upload to Sheets (Phase 6); a local LLM on the AI HAT+2 with a daily productivity report (Phase 7). Full voice control — wake word → speech-to-text → intent → action — is still the long-term goal but is parked, with no phase number yet.
+- **Planned**: dashboard layout and ordering — drag-to-reorder cards by a grip handle, fixed-size cards, red pause button, event ring times, mute on timers and events (Phase 5); goals, limits and timers/stopwatches loaded from the sheet (Phase 6); custom alert sounds (Phase 7); historical analytics plus the end-of-day upload to Sheets (Phase 8); a local LLM on the AI HAT+2 with a daily productivity report (Phase 9). Full voice control — wake word → speech-to-text → intent → action — is still the long-term goal but is parked, with no phase number yet.
 
 ## Tech Stack
 

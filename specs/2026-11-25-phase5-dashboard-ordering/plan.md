@@ -1,0 +1,67 @@
+# Plan — Phase 5: Dashboard layout & ordering
+
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Nothing is built yet (spec written 2026-11-25).
+
+Branch: `phase5-dashboard-ordering`.
+
+Convention (CLAUDE.md): tests are added when behaviour changes, the full `python -m pytest backend/tests/ -v` suite must pass before a group is called done (140 tests at the start), every new file gets a header and docstrings, and nothing is committed without the user reviewing the summary first.
+
+---
+
+## 1. Drag probe on the real touchscreen (decides the mechanism for 5a, 5b)
+
+Prove how a card can be dragged by **mouse and by finger** on this Pi before any real feature code depends on it. Nothing here touches the running app's cards.
+
+- [ ] Dev page `/?test=drag` (same pattern as `/?test=alarm`: chosen in `frontend/src/main.tsx` before `App` renders), showing a short wrapping list of dummy cards, each with a `GripVertical` handle.
+- [ ] Two variants side by side: **(A)** native HTML5 drag from the handle (what tasks use today), **(B)** hand-written pointer events on the handle (`touch-action: none`, pointer capture, drop target found by position). Each variant logs the events it receives and shows the resulting order.
+- [ ] **Run on the touchscreen with a finger** (user) and with the mouse: does each variant lift, follow, and drop correctly? Does the page scroll instead of dragging? Does a stray tap on the card body start anything?
+- [ ] Also try the **existing task rows** by finger — the user has already reported they fail (5j); the probe records *how* (no events at all, or the page scrolls instead) so the fix targets the real cause.
+- [ ] Write the result into `requirements.md` Decision 4 (chosen mechanism, and why the other lost).
+
+## 2. Backend: order, persisted (5h — backend half)
+
+- [ ] `Message` gains `order: list[int] | None` (the full desired id list for a `reorder`) and `muted: bool = False` (used in Group 6). `Message.pos` stays but is no longer trusted from the client on create.
+- [ ] `TaskManager.create`: assign `pos = (largest pos in that list) + 1` for tasks, events and durations (durations = stopwatches and timers share one counter).
+- [ ] New `reorder` command in `process_command`: validates that every id in `order` is a live card of the right kind, sets `pos = index`, persists all rows in **one transaction** (add a small multi-statement helper to `Database` if `execute` only takes one), tolerates ids deleted in the meantime. A malformed list is rejected without changing anything.
+- [ ] `get_ApiState` returns each list **sorted by `(pos, id)`**; the in-memory lists stay sorted by id (`sorted_find_index` depends on it). Document that split in a comment at the sort sites.
+- [ ] `retrieve_data` restores `pos` from the DB (check the `Message.model_validate` round-trip carries it).
+- [ ] Tests (`backend/tests/test_ordering.py`, temp DB fixtures): create order is append order; `reorder` changes `get_ApiState` order for tasks and for mixed stopwatch+timer lists; order survives a fresh `TaskManager` on the same DB; delete then reorder; a stale id in the list; a malformed list changes nothing; new card after a reorder lands last; `pos` stays gap-free enough that appending still works after deletes.
+- [ ] Add a regression test for the existing bug: a `reorder` command no longer raises `NotImplementedError`.
+
+## 3. Frontend: drag handle on duration cards; tasks fixed onto the same mechanism (5a, 5b, 5j, 5h — frontend half)
+
+- [ ] A `GripVertical` handle on the left of `DurationCardView` (matching the task rows' icon and colour). Only the handle starts a drag. Implemented with the mechanism chosen in Group 1.
+- [ ] Dropping sends `{ type: "duration", command: "reorder", order: [...] }` with the full id list in the new order; the local list is reordered optimistically and **the backend's order is what loads next time** (already applied via Group 2).
+- [ ] Visible drag feedback (dragged card dimmed or lifted, drop position highlighted), sized for a finger.
+- [ ] **5j — fix task reorder by finger.** Move the task list's drag onto the same mechanism as the duration cards (the reported bug: it works with a mouse only). Keep the grip handle as the drag start, keep the task text's double-click-to-edit and the complete/delete buttons working, and make sure a finger drag inside the scrolling task list reorders instead of scrolling it. Remove the old native `draggable`/`onDrag*` handlers once replaced, so there is a single implementation.
+- [ ] No automatic movement anywhere: confirm `toggleRunning`, pause, ring, dismiss, reset and sheet sync never reorder `durations` (Decision 2) — read the code paths and test them in the walkthrough.
+- [ ] The existing task `reorder` call now succeeds against the backend (Group 2); check the network log shows 200, not 500.
+
+## 4. Derived order: events by time, completed tasks last (5f, 5g)
+
+- [ ] Events render sorted by `ring_time` ascending — in the render, from state, so a new or edited event lands in the right place without a reload.
+- [ ] Tasks render as incomplete-in-`pos`-order then completed-in-`pos`-order (stable partition at render). Completing moves a task to the end; un-completing returns it to its slot. A drag rewrites `pos` for the full list so the saved order is consistent.
+- [ ] Verify: dragging while some tasks are completed does not scramble the hidden order; a sheet sync that adds a task puts it last among the incompletes.
+
+## 5. Card visuals: fixed size, red pause, event ring-time line (5c, 5e, 5i)
+
+- [ ] **5e** — `DurationCardView`: running → pause button red (new colour token chosen to be clearly different from the blue play button and distinct from the `#e03555` alert outline); not running → blue play button as today.
+- [ ] **5i** — `EventCardView`: small gray `h:mm AM/PM` line under the countdown, from `card.ringTime`, shown in all states.
+- [ ] **5c** — tabular numerals on all countdown/stopwatch digits, explicit fixed width and height on duration cards and event cards, content that can overflow (long label, `DONE!`, `HH:MM:SS`, the ring-time line) clipped or truncated rather than allowed to resize. Pick the pixel size against a screenshot at 1024×600 and record it here.
+- [ ] Scripted measurement (headless Chromium over CDP, as in Phase 4, on a faked network layer so the real DB is untouched): card width/height identical at `09:59`→`10:00`, `59:59`→`1:00:00`, in `DONE!`, and for the longest allowed label. Results recorded in `validation.md`.
+
+## 6. Mute on timers and events (5d)
+
+- [ ] `muted` column on `timers` and `events` (`CREATE TABLE IF NOT EXISTS` only — no migration code, by design). `Task`/`Event`/`Timer` classes carry the field; `get_tuple_to_save` and `get_Api*` enumerate it; `retrieve_data` restores it.
+- [ ] New `mute` command carrying the desired `muted` boolean (a set, not a toggle); persisted immediately.
+- [ ] Frontend: `Volume2` / `VolumeX` icon button on timer and event cards (never on stopwatches, in this phase), sized for a finger, not starting a drag. Optimistic local update plus the command.
+- [ ] Alarm engine: `App.tsx`'s "ringing" boolean becomes "at least one alerting timer/event that is **not muted**" and is passed to `useAlarmSound` as before; muted cards still blink and still need dismissal. No change inside `alarmSound.ts` unless the verification shows one is needed.
+- [ ] Tests: `mute` persists and restores after a fresh `TaskManager`; a restored ringing card keeps its mute state; muting does not change `alerting`.
+- [ ] The one-time table drop for an existing `productivity.db` (`timers`, `events`) is written into the README and `requirements.md`, as Phase 3 did.
+
+## 7. Docs, walkthrough and close-out
+
+- [ ] `specs/roadmap.md`: tick 5a–5i with dates; `specs/tech-stack.md` § Dashboard Ordering rewritten to match what was built (backend-owned `pos`, `reorder`/`mute` commands, the mechanism chosen in Group 1, the corrected `react-dnd` note); README gets the ordering/mute behaviour and the table-drop note; `CLAUDE.md` status updated.
+- [ ] Run `validation.md` in full on the real app and the real touchscreen; record results there, with honest gaps.
+- [ ] Full backend suite green; no traceback in the backend log and no console errors during the walkthrough.
+- [ ] Commit per group, user reviews each summary first; merge only when the `validation.md` merge bar is met.
