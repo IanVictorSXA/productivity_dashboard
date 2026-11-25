@@ -59,7 +59,11 @@ wait_for() {
 }
 
 chromium_arguments() {
-    # --kiosk                          full screen, no tabs, no address bar
+    # --app=URL                        a window with no tabs and no address bar
+    # --start-maximized                fill the screen but stay a normal window,
+    #                                  so the top panel (sound, wifi) stays
+    #                                  visible. Replaces --kiosk, which was true
+    #                                  full-screen and covered it.
     # --noerrdialogs                   never block the screen with a modal
     # --disable-infobars               no "Chrome is being controlled..." strip
     # --disable-session-crashed-bubble a power cut must not leave a "restore
@@ -79,7 +83,7 @@ chromium_arguments() {
     #                                  keeps that state in the profile dir
     #                                  instead of asking the OS keyring.
     printf '%s\n' \
-        --kiosk \
+        --start-maximized \
         --noerrdialogs \
         --disable-infobars \
         --disable-session-crashed-bubble \
@@ -88,7 +92,7 @@ chromium_arguments() {
         --disable-features=TranslateUI \
         --password-store=basic \
         "--user-data-dir=$PROFILE_DIR" \
-        "$DASHBOARD_URL"
+        "--app=$DASHBOARD_URL"
 }
 
 check() {

@@ -155,7 +155,7 @@ empty either way.
 
 ## Kiosk browser session
 
-`kiosk.sh` waits for the dashboard to answer, opens Chromium full-screen at it,
+`kiosk.sh` waits for the dashboard to answer, opens Chromium maximized (not full-screen, so the top panel with sound and wifi stays visible) at it,
 and relaunches Chromium if it ever exits. The relaunch loop is the point: this
 machine has no keyboard, so a browser crash would otherwise leave a black screen
 until someone finds one.
