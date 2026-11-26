@@ -71,7 +71,9 @@ class Message(BaseModel):
     completed: bool | None = None # is type task object completed?
     paused: bool = True # is type task object completed?
     alerting: bool = False # only ever set from a saved DB row, so a ringing card survives a restart; the frontend never sends it
-    pos: int = 0 # position of task
+    pos: int = 0 # saved display position; only trusted when restoring a DB row — `create` assigns a fresh one
+    order: list[int] | None = None # `reorder` only: every card id of that kind, in the desired display order
+    muted: bool = False # timers/events: ring silently (the alert still blinks). For `mute` it is the desired state, and a restored row carries its saved value
     source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
     sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
 
@@ -84,6 +86,9 @@ class Task:
     handling (e.g. `Event` and `Duration` override `get_tuple_to_save`,
     `edit`, `ring`, `stop_ring` for their own table/columns).
     """
+    # SQL table this card class persists to; `set_pos` writes to it.
+    table = "tasks"
+
     def __init__(self, msg : Message):
         """Build a Task from a `create` Message (or a row loaded from the DB)."""
         self.id = msg.id
@@ -100,12 +105,19 @@ class Task:
 
         self.deleted = False
         self.alerting = msg.alerting
-
+        # Only Event and Timer persist/serve this; see their `mute`.
+        self.muted = msg.muted
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this task's initial row into the `tasks` table."""
         return "INSERT OR IGNORE INTO tasks (id, label, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?)", \
                 (self.id, self.label, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
+
+    def set_pos(self, pos : int):
+        """Move this card to display position `pos`; returns the `(sql, params)` that saves it."""
+        self.pos = pos
+
+        return f"UPDATE {self.table} SET pos = ? WHERE id = ?", (pos, self.id)
 
     def delete(self, msg : Message = None):
         """Soft-delete: mark deleted so it's excluded from future `retrieveAll()` reads."""
@@ -138,6 +150,10 @@ class Task:
         self.alerting = False
         return "UPDATE tasks SET alerting = 0 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set whether this card rings silently. Only events and timers can be muted."""
+        raise ValueError("mute: only timers and events can be muted")
+
     def get_ApiTask(self):
         """Serialize for the `GET /api` response's `tasks` list."""
         task = dict(id=self.id, label=self.label, completed=self.completed,
@@ -153,6 +169,8 @@ class Event(Task):
     Unlike a `Task`, `completed` here doesn't mean "done" in the checkbox
     sense — it means "this ring has been acknowledged" (see `stop_ring`).
     """
+    table = "events"
+
     def __init__(self, msg : Message):
         """Build an Event from a `create` Message (or a row loaded from the DB)."""
         super().__init__(msg)
@@ -163,8 +181,8 @@ class Event(Task):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this event's initial row into the `events` table."""
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, muted, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.muted, self.source, self.sheet_key)
 
     def edit(self, msg : Message):
         """Rename and/or reschedule the ring time."""
@@ -198,9 +216,14 @@ class Event(Task):
         self.completed = True
         return "UPDATE events SET alerting = 0, completed = 1 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set (not toggle) the mute flag; touches neither `alerting` nor `completed`."""
+        self.muted = bool(msg.muted)
+        return "UPDATE events SET muted = ? WHERE id = ?", (self.muted, self.id)
+
     def get_ApiEvent(self):
         """Serialize for the `GET /api` response's `events` list."""
-        return self.get_ApiTask() | dict(ring_time=str(self.ring_time), alerting=self.alerting)
+        return self.get_ApiTask() | dict(ring_time=str(self.ring_time), alerting=self.alerting, muted=self.muted)
 
 class Duration(Task):
     """A stopwatch: counts up from `elapsed` while running, freezes while paused.
@@ -211,6 +234,8 @@ class Duration(Task):
     `Timer` subclasses this and adds a countdown target plus cross-edit
     accumulation (`total_elapsed`).
     """
+    table = "stopwatches"
+
     def __init__(self, msg):
         """Build a Duration from a `create` Message (or a row loaded from the DB)."""
         super().__init__(msg)
@@ -313,6 +338,8 @@ class Timer(Duration):
     countdown started) so an edit can reset the countdown without losing the
     cumulative time already spent on this timer.
     """
+    table = "timers"
+
     def __init__(self, msg : Message):
         """Build a Timer from a `create` Message (or a row loaded from the DB)."""
         super().__init__(msg)
@@ -323,11 +350,11 @@ class Timer(Duration):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this timer's initial row into the `timers` table."""
-        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, alerting, completed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, alerting, completed, paused, deleted, pos, muted) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
             (self.id, self.label, self.current_time.strftime(time_format), self.get_elapsed_str(self.total_time),
              self.get_elapsed_str(self.remaining_time), self.get_elapsed_str(self.elapsed),
              self.get_elapsed_str(self.total_elapsed), self.alerting, self.completed, self.paused,
-             self.deleted, self.pos)
+             self.deleted, self.pos, self.muted)
 
     def pause(self, msg: Message):
         """Freeze the countdown; `msg` carries the frontend's just-computed elapsed/remaining time."""
@@ -408,6 +435,11 @@ class Timer(Duration):
         self.alerting = False
         return "UPDATE timers SET alerting = 0 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set (not toggle) the mute flag; touches neither `alerting` nor the countdown."""
+        self.muted = bool(msg.muted)
+        return "UPDATE timers SET muted = ? WHERE id = ?", (self.muted, self.id)
+
     def get_ApiDuration(self):
         """Serialize for the `GET /api` response's `durations` list (see `Duration.get_ApiDuration`)."""
         elapsed_ms = self.elapsed.total_seconds() * 1000
@@ -415,7 +447,7 @@ class Timer(Duration):
         total_ms = self.total_time.total_seconds() * 1000
         timer = dict(id=self.id, label=self.label, subtype="timer",
                          total_ms=total_ms, accumulated_ms=elapsed_ms, started_at=started_at,
-                         alerting=self.alerting)
+                         alerting=self.alerting, muted=self.muted)
         return timer
 
 class TaskManager:
@@ -514,6 +546,12 @@ class TaskManager:
                 command, arguments = self.ring(msg)
             case "stop_ring":
                 command, arguments = self.stop_ring(msg)
+            case "mute":
+                command, arguments = self.mute(msg)
+            case "reorder":
+                # Persists many rows itself, in one transaction, so there is no
+                # single (command, arguments) tuple to hand to db.execute below.
+                self.reorder(msg)
             case "sync_sheets":
                 # The manual sync button (3f): same sync_day() as startup, but
                 # with the once-per-day marker bypassed via force=True. Already
@@ -566,13 +604,19 @@ class TaskManager:
         durations = []
         tasks = []
 
-        for event in self.events:
+        # The in-memory lists stay sorted by id (sorted_find_index binary-searches
+        # them); the order the user sees is `(pos, id)`, produced only here.
+        # Sorting copies leaves the originals untouched; `id` breaks ties for
+        # cards that share a pos (e.g. rows saved before Phase 5, all pos 0).
+        by_pos = lambda card : (card.pos, card.id)
+
+        for event in sorted(self.events, key=by_pos):
             events.append(event.get_ApiEvent())
 
-        for duration in self.durations:
+        for duration in sorted(self.durations, key=by_pos):
             durations.append(duration.get_ApiDuration())
 
-        for task in self.tasks:
+        for task in sorted(self.tasks, key=by_pos):
             tasks.append(task.get_ApiTask())
 
         return dict(
@@ -595,14 +639,39 @@ class TaskManager:
 
         for card in data:
             msg = Message.model_validate(card)
-            self.create(msg)
+            # Not `create`: that would overwrite the saved `pos` with "last".
+            self._instantiate(msg)
 
         self.tasks.sort(key=lambda x: x.id)
         self.events.sort(key=lambda x: x.id)
         self.durations.sort(key=lambda x: x.id)
 
 
+    def _list_for(self, msg : Message):
+        """The in-memory list a card of `msg.type` lives in (stopwatches and timers share `durations`)."""
+        match msg.type:
+            case "task":
+                return self.tasks
+            case "event":
+                return self.events
+            case "duration":
+                return self.durations
+            case _:
+                raise TypeError(f"Invalid msg.type: {msg.type}")
+
     def create(self, msg : Message):
+        """Add a new card, placed last in its list, and return its INSERT `(sql, params)`.
+
+        The client's `msg.pos` is ignored: the backend owns display order, so a
+        new card always lands after every card of its kind (`largest pos + 1`).
+        `retrieve_data` bypasses this and keeps each row's saved `pos`.
+        """
+        cards = self._list_for(msg)
+        last_pos = max((card.pos for card in cards), default=-1)
+
+        return self._instantiate(msg.model_copy(update={"pos": last_pos + 1}))
+
+    def _instantiate(self, msg : Message):
         """Instantiate the right card class for `msg.type` (and `msg.type_duration`), and save it."""
 
         match msg.type:
@@ -636,6 +705,39 @@ class TaskManager:
                         raise TypeError("msg.type = duration and Invalid msg.type_duration")
             case _:
                 raise TypeError(f"Invalid msg.type: {msg.type}")
+
+    def reorder(self, msg : Message):
+        """Apply a drag-and-drop: `msg.order` is every card id of `msg.type`, in the new display order.
+
+        Positions become the list index (0, 1, 2...) and all rows are saved in
+        one transaction, so a crash cannot leave half the cards moved. Because
+        the whole list is sent, repeating the same request changes nothing.
+        Two races are tolerated: an id deleted since the drag began is skipped,
+        and a card created since (e.g. by a sheet sync) that the client did
+        not know about keeps its place after the listed ones. A request that
+        cannot be a real drag — no list, a repeated id, an id that belongs to
+        another kind of card — raises `ValueError` before anything is changed.
+        """
+        if msg.type not in ("task", "duration"):
+            raise ValueError(f"reorder: cannot reorder type {msg.type!r}")
+        if msg.order is None:
+            raise ValueError("reorder: missing order list")
+        if len(set(msg.order)) != len(msg.order):
+            raise ValueError("reorder: duplicate ids in order list")
+
+        cards = self._list_for(msg)
+        other_ids = {card.id for lst in (self.tasks, self.events, self.durations)
+                     if lst is not cards for card in lst}
+        wrong_kind = other_ids.intersection(msg.order)
+        if wrong_kind:
+            raise ValueError(f"reorder: ids {sorted(wrong_kind)} are not {msg.type} cards")
+
+        by_id = {card.id: card for card in cards}
+        listed = [by_id[card_id] for card_id in msg.order if card_id in by_id]
+        unlisted = sorted((card for card in cards if card.id not in msg.order),
+                          key=lambda card : (card.pos, card.id))
+
+        self.db.execute_many([card.set_pos(pos) for pos, card in enumerate(listed + unlisted)])
 
     def pause(self, msg : Message):
         """Pause the duration/timer with `msg.id` (durations only — no `type` dispatch needed)."""
@@ -735,6 +837,24 @@ class TaskManager:
                 return self.stop_ring_helper(self.durations, msg)
             case "event":
                 return self.stop_ring_helper(self.events, msg)
+
+    def mute(self, msg : Message):
+        """Set a timer's or event's mute flag to `msg.muted` (a set, so a retry cannot flip it back).
+
+        Stopwatches and tasks cannot be muted; asking raises `ValueError`.
+        """
+        match msg.type:
+            case "duration":
+                cards = self.durations
+            case "event":
+                cards = self.events
+            case _:
+                raise ValueError(f"mute: cannot mute type {msg.type!r}")
+
+        index = sorted_find_index(cards, msg.id)
+        if index == -1:
+            return "", ()  # deleted since the click: nothing to mute
+        return cards[index].mute(msg)
 
     def complete_helper(self, sorted_ids : list[Task], msg : Message):
         """Find `msg.id` in `sorted_ids` and toggle its completed state."""

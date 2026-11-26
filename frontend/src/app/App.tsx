@@ -10,10 +10,14 @@ import {
   GripVertical,
   Pencil,
   RefreshCw,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
 import { useAlarmSound } from "@/app/alarmSound";
+import { sortEventsByRingTime, incompleteFirst, mergeVisibleOrder } from "@/app/cardOrder";
+import { useDragReorder } from "@/app/dragReorder";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -56,15 +60,16 @@ type ApiDuration = {
   accumulated_ms: number;
   started_at: number | null; // epoch ms when last resumed; null = paused
   alerting: boolean;
+  muted?: boolean; // timers only; absent on stopwatches
 };
 type ApiTask  = { id: number; label: string; completed: boolean };
-type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean };
+type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean; muted?: boolean };
 // status: disabled (sync off — hide the button), ok, skipped (already synced today), error
 type ApiSheetSync = { date: string | null; status: "disabled" | "ok" | "skipped" | "error"; detail: string };
 type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[]; sheet_sync?: ApiSheetSync | null };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
-type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean };
+type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean; muted: boolean };
 
 /**
  * Timer state is timestamp-based so display values are always computed from
@@ -81,6 +86,7 @@ type DurationCard = {
   accumulatedMs: number;    // ms elapsed before the last resume
   startedAt: number | null; // Date.now() when last resumed; null = paused
   alerting: boolean;
+  muted: boolean;           // timers only (5d): rings silently, still blinks; always false on stopwatches
 };
 
 type Task = { id: number; label: string; completed: boolean };
@@ -103,6 +109,30 @@ function fmtMs(ms: number): string {
   const s = total % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
+
+// Jockey One has no tabular-figure feature (measured: "11:11:11" is 77px wide, "00:00:00" 114px),
+// so `font-variant-numeric` alone cannot stop a card resizing as digits change. Each character
+// gets its own fixed-width cell instead: 0.56em covers the widest digit in Jockey One (0.49em)
+// and in the sans-serif fallback (0.56em); colons get 0.34em.
+function FixedTime({ text }: { text: string }) {
+  return (
+    <span className="whitespace-nowrap" style={{ display: "inline-flex" }}>
+      {[...text].map((ch, i) => (
+        <span key={i} style={{ display: "inline-block", width: ch === ":" ? "0.34em" : "0.56em", textAlign: "center" }}>{ch}</span>
+      ))}
+    </span>
+  );
+}
+
+// Same card footprint in every state (idle, running, ringing) and for any label length or time.
+// Chosen against a 1024x600 measurement (see plan.md Group 5): content is clipped, never allowed to resize.
+const CARD_W = 224;
+const DURATION_CARD_H = 88;
+const EVENT_CARD_H = 100;
+
+// Pause-button colour for a running card (5e): clearly not the play button's blue, and different
+// from the alert outline's #e03555 (the button is hidden while a card rings, so they never meet).
+const RUNNING_RED = "#dc2626";
 
 function parseHhMmSs(hh: string, mm: string, ss: string): number {
   return ((parseInt(hh) || 0) * 3600 + (parseInt(mm) || 0) * 60 + (parseInt(ss) || 0)) * 1000;
@@ -135,6 +165,12 @@ function msToRingInputs(d: Date): { hh: string; mm: string; ampm: "AM" | "PM" } 
   if (h > 12) h -= 12;
   if (h === 0) h = 12;
   return { hh: String(h).padStart(2, "0"), mm: String(m).padStart(2, "0"), ampm };
+}
+
+/** Clock time shown under an event's countdown: "3:05 PM" (12-hour, local timezone). */
+function fmtRingClock(d: Date): string {
+  const { hh, mm, ampm } = msToRingInputs(d);
+  return `${parseInt(hh)}:${mm} ${ampm}`;
 }
 
 function msUntil(d: Date): number {
@@ -207,8 +243,6 @@ export default function App() {
   const [modal,     setModal]     = useState<ModalState>(defaultModal());
   const [loading,   setLoading]   = useState(true);
   const [editingTask, setEditingTask] = useState<number | null>(null);
-  const [dragOver,    setDragOver]   = useState<number | null>(null);
-  const dragItem = useRef<number | null>(null);
   const [sheetSync, setSheetSync] = useState<ApiSheetSync | null>(null);
   const [syncing,   setSyncing]   = useState(false);
   const [resetArmed, setResetArmed] = useState(false); // first tap done, waiting for the confirming second tap
@@ -235,10 +269,10 @@ export default function App() {
         loadedDurations = (state.durations ?? []).map(d => ({
           id: d.id, label: d.label, subtype: d.subtype,
           totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
-          startedAt: d.started_at, alerting: d.alerting,
+          startedAt: d.started_at, alerting: d.alerting, muted: d.muted ?? false,
         }));
         loadedEvents = (state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         }));
         loadedTasks = (state.tasks ?? []).map(t => ({
           id: t.id, label: t.label, completed: t.completed,
@@ -251,7 +285,7 @@ export default function App() {
         if (!loadedDurations.some(d => d.label === name)) {
           const card: DurationCard = {
             id: genId(), label: name, subtype: "stopwatch",
-            totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false,
+            totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false, muted: false,
           };
           toCreate.push(card);
           sendMessage({ id: card.id, type: "duration", type_duration: "stopwatch", label: name, current_time: nowTimeStr(), command: "create" });
@@ -279,7 +313,7 @@ export default function App() {
       if (state) {
         _nextId = Math.max(_nextId, state.last_id ?? 0);
         setEvents((state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         })));
         setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
         setSheetSync(state.sheet_sync ?? null);
@@ -313,10 +347,10 @@ export default function App() {
         setDurations((state.durations ?? []).map(d => ({
           id: d.id, label: d.label, subtype: d.subtype,
           totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
-          startedAt: d.started_at, alerting: d.alerting,
+          startedAt: d.started_at, alerting: d.alerting, muted: d.muted ?? false,
         })));
         setEvents((state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         })));
         setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
         setSheetSync(state.sheet_sync ?? null);
@@ -360,9 +394,12 @@ export default function App() {
   //
   // Checked as `subtype === "timer"` rather than "any duration" so a stopwatch
   // can never trigger sound, even if its `alerting` flag were ever set.
+  // 5d: a muted card still blinks and needs dismissal, but only an un-muted
+  // alerting card keeps the sound going — so muting the last audible card stops
+  // it, and un-muting a ringing one starts it again.
   useAlarmSound(
-    events.some(e => e.alerting) ||
-    durations.some(d => d.subtype === "timer" && d.alerting)
+    events.some(e => e.alerting && !e.muted) ||
+    durations.some(d => d.subtype === "timer" && d.alerting && !d.muted)
   );
 
   // ── Toggle running ──────────────────────────────────────────────────────────
@@ -460,24 +497,31 @@ export default function App() {
     sendMessage({ id, type: "task", label: label, command: "edit" });
   };
 
-  // ── Drag-reorder tasks ──
-  const onDragStart = (id: number) => { dragItem.current = id; };
-  const onDragOver  = (e: React.DragEvent, id: number) => { e.preventDefault(); setDragOver(id); };
-  const onDrop      = (targetId: number) => {
-    const sourceId = dragItem.current;
-    if (sourceId === null || sourceId === targetId) { setDragOver(null); return; }
-    setTasks(prev => {
-      const arr = [...prev];
-      const si = arr.findIndex(t => t.id === sourceId);
-      const ti = arr.findIndex(t => t.id === targetId);
-      const [item] = arr.splice(si, 1);
-      arr.splice(ti, 0, item);
-      sendMessage({ type: "task", command: "reorder", order: arr.map(t => t.id) });
-      return arr;
-    });
-    dragItem.current = null;
-    setDragOver(null);
+  // Display order, derived from state at render (5f, 5g): events by ring time,
+  // completed tasks last. State itself keeps the backend's saved order.
+  const shownEvents = sortEventsByRingTime(events);
+  const shownTasks = incompleteFirst(tasks);
+
+  // ── Drag-reorder (pointer events, mouse and finger; see dragReorder.tsx) ──
+  // Both lists apply the new order locally at once, then tell the backend the
+  // full id list; the backend's saved order is what loads next time.
+  const applyOrder = <T extends { id: number }>(list: T[], order: number[]): T[] => {
+    const byId = new Map(list.map(c => [c.id, c]));
+    const ordered = order.flatMap(id => byId.get(id) ?? []);
+    return [...ordered, ...list.filter(c => !order.includes(c.id))];
   };
+  // Tasks are drawn incomplete-first (5g) but saved in `pos` order, so the drag
+  // reports the visible order and `mergeVisibleOrder` maps it onto the full list.
+  const taskDrag = useDragReorder("task", shownTasks.map(t => t.id), visible => {
+    const done = new Set(tasks.filter(t => t.completed).map(t => t.id));
+    const order = mergeVisibleOrder(tasks.map(t => t.id), visible, id => done.has(id));
+    setTasks(prev => applyOrder(prev, order));
+    sendMessage({ type: "task", command: "reorder", order });
+  });
+  const durationDrag = useDragReorder("duration", durations.map(d => d.id), order => {
+    setDurations(prev => applyOrder(prev, order));
+    sendMessage({ type: "duration", command: "reorder", order });
+  });
 
   // ── Open create modal ──
   const openCreateModal = () => setModal({ ...defaultModal(), open: true });
@@ -613,7 +657,7 @@ export default function App() {
     if (mode === "duration") {
       const id = genId();
       if (subtype === "stopwatch") {
-        const card: DurationCard = { id, label: lbl, subtype: "stopwatch", totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false };
+        const card: DurationCard = { id, label: lbl, subtype: "stopwatch", totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false, muted: false };
         setDurations(prev => [...prev, card]);
         sendMessage({ id, type: "duration", type_duration: "stopwatch", label: lbl, current_time: nowTimeStr(), command: "create" });
       } else {
@@ -624,7 +668,7 @@ export default function App() {
           totalMs = parseHhMmSs(hh, mm, ss);
         }
         if (totalMs <= 0) totalMs = 3600000;
-        const card: DurationCard = { id, label: lbl, subtype: "timer", totalMs, accumulatedMs: 0, startedAt: null, alerting: false };
+        const card: DurationCard = { id, label: lbl, subtype: "timer", totalMs, accumulatedMs: 0, startedAt: null, alerting: false, muted: false };
         setDurations(prev => [...prev, card]);
         sendMessage({ id, type: "duration", type_duration: "timer", label: lbl, current_time: nowTimeStr(), total_time: fmtMs(totalMs), command: "create" });
       }
@@ -637,7 +681,7 @@ export default function App() {
         const ms = parseHhMmSs(hh, mm, ss);
         ringTime = new Date(Date.now() + (ms || 3600000));
       }
-      setEvents(prev => [...prev, { id, label: lbl, ringTime, alerting: false, completed: false }]);
+      setEvents(prev => [...prev, { id, label: lbl, ringTime, alerting: false, completed: false, muted: false }]);
       sendMessage({ id, type: "event", label: lbl, ring_time: ringTime.toISOString(), command: "create" });
     }
     setModal(defaultModal());
@@ -653,6 +697,18 @@ export default function App() {
     return prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e);
   });
 }, []);
+
+  // ── Mute (5d) ──
+  // Sends the desired state (a set, not a toggle) so a retried request cannot flip it back.
+  const setEventMuted = useCallback((id: number, muted: boolean) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, muted } : e));
+    sendMessage({ id, type: "event", command: "mute", muted });
+  }, []);
+
+  const setTimerMuted = useCallback((id: number, muted: boolean) => {
+    setDurations(prev => prev.map(d => d.id === id ? { ...d, muted } : d));
+    sendMessage({ id, type: "duration", command: "mute", muted });
+  }, []);
 
   const dismissDuration = useCallback((id: number) => {
   setDurations(prev => {
@@ -754,13 +810,14 @@ export default function App() {
             <section>
               <h2 className="text-lg mb-2" style={{ color: "#c8d8f8", letterSpacing: "0.04em" }}>Events</h2>
               <div className="flex flex-wrap gap-3">
-                {events.map(ev => (
+                {shownEvents.map(ev => (
                   <EventCardView
                     key={ev.id}
                     card={ev}
                     onEdit={() => openEditEvent(ev)}
                     onDelete={() => deleteEvent(ev.id)}
                     onDismiss={() => dismissEvent(ev.id)}
+                    onMute={() => setEventMuted(ev.id, !ev.muted)}
                   />
                 ))}
                 {events.length === 0 && (
@@ -779,10 +836,15 @@ export default function App() {
                   <DurationCardView
                     key={d.id}
                     card={d}
+                    handleProps={durationDrag.handleProps(d.id, d.label)}
+                    itemProps={durationDrag.itemProps(d.id)}
+                    dragging={durationDrag.dragId === d.id}
+                    dropTarget={durationDrag.dragId !== null && durationDrag.dragId !== d.id && durationDrag.overId === d.id}
                     onToggle={() => toggleRunning(d.id)}
                     onEdit={() => openEditDuration(d)}
                     onDelete={() => deleteDuration(d.id)}
                     onDismiss={() => dismissDuration(d.id)}
+                    onMute={() => setTimerMuted(d.id, !d.muted)}
                   />
                 ))}
                 {durations.length === 0 && (
@@ -822,22 +884,24 @@ export default function App() {
             className="flex-1 overflow-y-auto px-2 py-2 space-y-1"
             style={{ scrollbarWidth: "thin", scrollbarColor: "#1e3a6e transparent" }}
           >
-            {tasks.map(t => (
+            {shownTasks.map(t => (
               <div
                 key={t.id}
-                draggable
-                onDragStart={() => onDragStart(t.id)}
-                onDragOver={e => onDragOver(e, t.id)}
-                onDrop={() => onDrop(t.id)}
-                onDragLeave={() => setDragOver(null)}
-                className="flex items-center gap-1.5 rounded-lg px-2 py-2"
+                {...taskDrag.itemProps(t.id)}
+                className="flex items-center gap-1.5 rounded-lg pr-2 py-1"
                 style={{
-                  background: dragOver === t.id ? "rgba(61,110,234,0.2)" : "#0d1628",
+                  background: taskDrag.dragId !== null && taskDrag.dragId !== t.id && taskDrag.overId === t.id ? "rgba(61,110,234,0.2)" : "#0d1628",
                   border: "1px solid rgba(61,110,234,0.2)",
-                  cursor: "grab",
+                  opacity: taskDrag.dragId === t.id ? 0.4 : 1,
                 }}
               >
-                <GripVertical size={11} style={{ color: "#2a3e6a" }} className="shrink-0" />
+                {/* Grip: the only part that starts a drag. Wider/taller than the icon so a finger can hit it. */}
+                <div
+                  {...taskDrag.handleProps(t.id, t.label)}
+                  className="flex items-center justify-center self-stretch w-7 min-h-[32px] shrink-0 rounded-l-lg"
+                >
+                  <GripVertical size={14} style={{ color: "#4a64a8" }} />
+                </div>
                 <button
                   className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
                   style={{ border: "1.5px solid #3d6eea" }}
@@ -886,6 +950,9 @@ export default function App() {
         </div>
       </div>
 
+      {taskDrag.ghost}
+      {durationDrag.ghost}
+
       {/* ── Modal ── */}
       {modal.open && (
         <div
@@ -905,18 +972,20 @@ export default function App() {
 }
 
 // ─── Event card view ──────────────────────────────────────────────────────────
-function EventCardView({ card, onEdit, onDelete, onDismiss }: {
+function EventCardView({ card, onEdit, onDelete, onDismiss, onMute }: {
   card: EventCard;
   onEdit: () => void;
   onDelete: () => void;
   onDismiss: () => void;
+  onMute: () => void;
 }) {
   // getDisplayMs uses Date.now() internally, so this is always current
   const remaining = msUntil(card.ringTime);
   return (
     <div
-      className="relative rounded-xl px-4 py-2 flex flex-col min-w-[148px]"
+      className="relative rounded-xl px-4 py-2 flex flex-col shrink-0 overflow-hidden"
       style={{
+        width: CARD_W, height: EVENT_CARD_H, boxSizing: "border-box",
         background: card.alerting ? "#3a0a14" : "#0d1628",
         border: card.alerting ? "2px solid #e03555" : "1px solid rgba(61,110,234,0.3)",
         boxShadow: "0 0 12px rgba(61,110,234,0.12)",
@@ -926,26 +995,34 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
       onClick={() => card.alerting && onDismiss()}
     >
       <div className="flex items-center justify-between mb-1 gap-2">
-        <span className="text-sm truncate" style={{ color: "#b0c8f0" }}>{card.label}</span>
+        <span className="text-sm truncate min-w-0" style={{ color: "#b0c8f0" }}>{card.label}</span>
         <div className="flex items-center gap-1 shrink-0">
+          <MuteBtn muted={card.muted} onClick={e => { e.stopPropagation(); onMute(); }} />
           <IconBtn onClick={e => { e.stopPropagation(); onEdit(); }}><Pencil size={9} className="text-blue-300" /></IconBtn>
           <IconBtn onClick={e => { e.stopPropagation(); onDelete(); }}><X size={9} className="text-blue-300" /></IconBtn>
         </div>
       </div>
-      <span className="text-3xl font-bold tracking-wider text-white">
-        {card.alerting ? "RING!" : fmtMs(remaining)}
+      <span className="text-3xl font-bold text-white whitespace-nowrap">
+        {card.alerting ? "RING!" : <FixedTime text={fmtMs(remaining)} />}
       </span>
+      {/* 5i: when it will ring, in every state (including while ringing) */}
+      <span className="text-sm whitespace-nowrap" style={{ color: "#7f8aa3" }}>{fmtRingClock(card.ringTime)}</span>
     </div>
   );
 }
 
 // ─── Duration card view ───────────────────────────────────────────────────────
-function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
+function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, onToggle, onEdit, onDelete, onDismiss, onMute }: {
   card: DurationCard;
+  handleProps: React.HTMLAttributes<HTMLDivElement>; // spread on the grip: the only thing that starts a drag
+  itemProps: Record<string, string | number>;        // data attributes the drop-target lookup reads
+  dragging: boolean;                                 // this card is the one being dragged
+  dropTarget: boolean;                               // the dragged card is hovering over this one
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onDismiss: () => void;
+  onMute: () => void;                                // timers only; a stopwatch card never shows the button
 }) {
   // getDisplayMs calls Date.now() — always accurate, never stale-tick-based
   const display    = getDisplayMs(card);
@@ -953,8 +1030,12 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
 
   return (
     <div
-      className="relative rounded-xl px-4 py-2 flex flex-col min-w-[160px]"
+      {...itemProps}
+      className="relative rounded-xl pr-4 flex shrink-0 overflow-hidden"
       style={{
+        width: CARD_W, height: DURATION_CARD_H, boxSizing: "border-box",
+        opacity: dragging ? 0.4 : 1,
+        outline: dropTarget ? "2px solid #3d6eea" : "none",
         background: "#0d1628",
         border: card.alerting ? "2px solid #e03555" : isRunning ? "1px solid rgba(61,110,234,0.7)" : "1px solid rgba(61,110,234,0.3)",
         boxShadow: isRunning ? "0 0 16px rgba(61,110,234,0.25)" : "0 0 12px rgba(61,110,234,0.1)",
@@ -963,6 +1044,14 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
       }}
       onClick={() => card.alerting && onDismiss()}
     >
+      {/* Grip: full card height and ~40px wide so a finger can hit it; the only drag starter. */}
+      <div
+        {...handleProps}
+        className="flex items-center justify-center w-8 shrink-0 rounded-l-xl"
+      >
+        <GripVertical size={16} style={{ color: "#4a64a8" }} />
+      </div>
+      <div className="flex flex-col flex-1 min-w-0 py-2">
       <div className="flex items-center justify-between mb-1 gap-2">
         <div className="flex items-center gap-1 min-w-0">
           {card.subtype === "timer"
@@ -972,18 +1061,21 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
           <span className="text-sm truncate" style={{ color: "#b0c8f0" }}>{card.label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {card.subtype === "timer" && (
+            <MuteBtn muted={card.muted} onClick={e => { e.stopPropagation(); onMute(); }} />
+          )}
           <IconBtn onClick={e => { e.stopPropagation(); onEdit(); }}><Pencil size={9} className="text-blue-300" /></IconBtn>
           <IconBtn onClick={e => { e.stopPropagation(); onDelete(); }}><X size={9} className="text-blue-300" /></IconBtn>
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-3xl font-bold tracking-wider text-white">
-          {card.alerting ? "DONE!" : fmtMs(display)}
+        <span className="text-3xl font-bold text-white whitespace-nowrap">
+          {card.alerting ? "DONE!" : <FixedTime text={fmtMs(display)} />}
         </span>
         {!card.alerting && (
           <button
             className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: isRunning ? "#1a2d6e" : "#2250c4" }}
+            style={{ background: isRunning ? RUNNING_RED : "#2250c4" }}
             onClick={e => { e.stopPropagation(); onToggle(); }}
           >
             {isRunning
@@ -992,6 +1084,7 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
             }
           </button>
         )}
+      </div>
       </div>
     </div>
   );
@@ -1159,6 +1252,25 @@ function IconBtn({ onClick, children }: { onClick: React.MouseEventHandler; chil
       onClick={onClick}
     >
       {children}
+    </button>
+  );
+}
+
+// Speaker toggle for a timer or event (5d). Same 20px circle as the edit/delete IconBtns so the
+// header row (and the fixed card height measured with it) is unchanged. Muted = crossed speaker
+// in the alert red.
+function MuteBtn({ muted, onClick }: { muted: boolean; onClick: React.MouseEventHandler }) {
+  return (
+    <button
+      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+      style={{ background: muted ? "#3a1a26" : "#1e2a44" }}
+      aria-label={muted ? "Unmute" : "Mute"}
+      aria-pressed={muted}
+      onClick={onClick}
+    >
+      {muted
+        ? <VolumeX size={11} style={{ color: "#ff6b81" }} />
+        : <Volume2 size={11} className="text-blue-300" />}
     </button>
   );
 }
