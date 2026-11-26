@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Groups 4–7 not started.
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Group 4 (derived order) built 2026-11-25; Groups 5–7 not started.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -45,9 +45,13 @@ Prove how a card can be dragged by **mouse and by finger** on this Pi before any
 
 ## 4. Derived order: events by time, completed tasks last (5f, 5g)
 
-- [ ] Events render sorted by `ring_time` ascending — in the render, from state, so a new or edited event lands in the right place without a reload.
-- [ ] Tasks render as incomplete-in-`pos`-order then completed-in-`pos`-order (stable partition at render). Completing moves a task to the end; un-completing returns it to its slot. A drag rewrites `pos` for the full list so the saved order is consistent.
-- [ ] Verify: dragging while some tasks are completed does not scramble the hidden order; a sheet sync that adds a task puts it last among the incompletes.
+- [x] (2026-11-25) Events render sorted by `ring_time` ascending — in the render, from state (`sortEventsByRingTime`), so a new or edited event lands in the right place without a reload. Ties break by id.
+- [x] (2026-11-25) Tasks render as incomplete-in-`pos`-order then completed-in-`pos`-order (`incompleteFirst`, a stable partition at render). Completing moves a task to the end; un-completing returns it to its slot. A drag rewrites `pos` for the full list so the saved order is consistent.
+- [x] (2026-11-25, scripted) Verify: dragging while some tasks are completed does not scramble the hidden order; a sheet sync that adds a task puts it last among the incompletes (by construction: the backend gives it `pos = max + 1`, and the partition keeps it after the other incompletes).
+
+*Built 2026-11-25: new `frontend/src/app/cardOrder.ts` (three pure helpers) used by `App.tsx`; `tasks`/`events` state still hold the backend's saved order and nothing is stored for the derived order. No backend change (suite still 164). **The one subtle part:** a task drag happens on the *visible* list, so `mergeVisibleOrder(full, visible, isDone)` maps it back — incomplete ids take the slots incomplete tasks held in the saved list, completed ids the slots completed ones held. Example: saved `21,22,23,24,25` with 22 and 24 done, drag 25 to the top → sends `[25,22,21,24,23]`; the completed pair keeps slots 1 and 3. Dropping an incomplete task on a completed one leaves it as the last incomplete (it can't enter the completed block); the reverse likewise.*
+
+*Checked by machine (headless Chromium over CDP, `/api` faked, script `order_check.mjs` in the session scratchpad, 9/9): events shown Soon/Mid/Late from ids out of order; tasks 21,23,25,22,24; completing/un-completing sends only `complete`, never `reorder`, and the task returns to its slot; the drag cases above send the expected body. Not checked: a real finger (same mechanism as Group 3), and the event-edit path in a live browser (it uses the same `setEvents`, so the derived sort covers it, but I didn't click it). The manual steps are `validation.md` § C2.*
 
 ## 5. Card visuals: fixed size, red pause, event ring-time line (5c, 5e, 5i)
 

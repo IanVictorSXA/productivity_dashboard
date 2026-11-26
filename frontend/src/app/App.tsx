@@ -14,6 +14,7 @@ import {
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
 import { useAlarmSound } from "@/app/alarmSound";
+import { sortEventsByRingTime, incompleteFirst, mergeVisibleOrder } from "@/app/cardOrder";
 import { useDragReorder } from "@/app/dragReorder";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
@@ -459,6 +460,11 @@ export default function App() {
     sendMessage({ id, type: "task", label: label, command: "edit" });
   };
 
+  // Display order, derived from state at render (5f, 5g): events by ring time,
+  // completed tasks last. State itself keeps the backend's saved order.
+  const shownEvents = sortEventsByRingTime(events);
+  const shownTasks = incompleteFirst(tasks);
+
   // ── Drag-reorder (pointer events, mouse and finger; see dragReorder.tsx) ──
   // Both lists apply the new order locally at once, then tell the backend the
   // full id list; the backend's saved order is what loads next time.
@@ -467,7 +473,11 @@ export default function App() {
     const ordered = order.flatMap(id => byId.get(id) ?? []);
     return [...ordered, ...list.filter(c => !order.includes(c.id))];
   };
-  const taskDrag = useDragReorder("task", tasks.map(t => t.id), order => {
+  // Tasks are drawn incomplete-first (5g) but saved in `pos` order, so the drag
+  // reports the visible order and `mergeVisibleOrder` maps it onto the full list.
+  const taskDrag = useDragReorder("task", shownTasks.map(t => t.id), visible => {
+    const done = new Set(tasks.filter(t => t.completed).map(t => t.id));
+    const order = mergeVisibleOrder(tasks.map(t => t.id), visible, id => done.has(id));
     setTasks(prev => applyOrder(prev, order));
     sendMessage({ type: "task", command: "reorder", order });
   });
@@ -751,7 +761,7 @@ export default function App() {
             <section>
               <h2 className="text-lg mb-2" style={{ color: "#c8d8f8", letterSpacing: "0.04em" }}>Events</h2>
               <div className="flex flex-wrap gap-3">
-                {events.map(ev => (
+                {shownEvents.map(ev => (
                   <EventCardView
                     key={ev.id}
                     card={ev}
@@ -823,7 +833,7 @@ export default function App() {
             className="flex-1 overflow-y-auto px-2 py-2 space-y-1"
             style={{ scrollbarWidth: "thin", scrollbarColor: "#1e3a6e transparent" }}
           >
-            {tasks.map(t => (
+            {shownTasks.map(t => (
               <div
                 key={t.id}
                 {...taskDrag.itemProps(t.id)}

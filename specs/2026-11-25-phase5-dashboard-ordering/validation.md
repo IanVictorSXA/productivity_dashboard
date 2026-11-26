@@ -46,6 +46,14 @@ Set up first: start the app on a **backed-up or throwaway** `productivity.db` (t
 3. Reorder, then immediately cut the page without waiting (close tab): the order was saved at drop time, so it is still there.
 4. After a restart, **create a card**: it is last. Delete a card in the middle and reload: the remaining order is unchanged.
 
+### C2. Derived order: events by time, completed tasks last (5f, 5g)
+
+1. Create three events out of time order (e.g. 3 PM, then 1 PM, then 2 PM): they show **1 PM, 2 PM, 3 PM**, with no reload. Edit one event's time: it moves to its new place at once. Events have no grip handle.
+2. Create tasks A, B, C, D, E; tick **B** and **D**. The list reads **A, C, E, B, D** (completed last, each group in its saved order). Untick B: it returns to its slot (**A, B, C, E, D**).
+3. With B and D still ticked, drag **E** to the top: **E, A, C, B, D** — and after untick-ing D then B and reloading, the order is E, A, B, C, D (the hidden slots were not scrambled).
+4. Tap **sync** (or add a task by hand): the new task lands **after the last incomplete task** and before the completed ones.
+5. Reload and restart the backend: the same display order.
+
 ### D. Red pause button (5e) — user-added item
 
 1. A paused/idle card shows a **blue play** button; starting it turns the button **red pause**; pausing turns it blue again — for a stopwatch and for a timer.
