@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Groups 2–7 not started.
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, uncommitted; Groups 3–7 not started.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -20,13 +20,15 @@ Prove how a card can be dragged by **mouse and by finger** on this Pi before any
 
 ## 2. Backend: order, persisted (5h — backend half)
 
-- [ ] `Message` gains `order: list[int] | None` (the full desired id list for a `reorder`) and `muted: bool = False` (used in Group 6). `Message.pos` stays but is no longer trusted from the client on create.
-- [ ] `TaskManager.create`: assign `pos = (largest pos in that list) + 1` for tasks, events and durations (durations = stopwatches and timers share one counter).
-- [ ] New `reorder` command in `process_command`: validates that every id in `order` is a live card of the right kind, sets `pos = index`, persists all rows in **one transaction** (add a small multi-statement helper to `Database` if `execute` only takes one), tolerates ids deleted in the meantime. A malformed list is rejected without changing anything.
-- [ ] `get_ApiState` returns each list **sorted by `(pos, id)`**; the in-memory lists stay sorted by id (`sorted_find_index` depends on it). Document that split in a comment at the sort sites.
-- [ ] `retrieve_data` restores `pos` from the DB (check the `Message.model_validate` round-trip carries it).
-- [ ] Tests (`backend/tests/test_ordering.py`, temp DB fixtures): create order is append order; `reorder` changes `get_ApiState` order for tasks and for mixed stopwatch+timer lists; order survives a fresh `TaskManager` on the same DB; delete then reorder; a stale id in the list; a malformed list changes nothing; new card after a reorder lands last; `pos` stays gap-free enough that appending still works after deletes.
-- [ ] Add a regression test for the existing bug: a `reorder` command no longer raises `NotImplementedError`.
+- [x] (2026-11-25) `Message` gains `order: list[int] | None` (the full desired id list for a `reorder`) and `muted: bool = False` (used in Group 6). `Message.pos` stays but is no longer trusted from the client on create.
+- [x] (2026-11-25) `TaskManager.create` (the build step is split out as `_instantiate`, which `retrieve_data` uses so a restored row keeps its saved `pos`): assign `pos = (largest pos in that list) + 1` for tasks, events and durations (durations = stopwatches and timers share one counter).
+- [x] (2026-11-25) New `reorder` command in `process_command`: validates that every id in `order` is a live card of the right kind, sets `pos = index`, persists all rows in **one transaction** (add a small multi-statement helper to `Database` if `execute` only takes one), tolerates ids deleted in the meantime. A malformed list is rejected without changing anything.
+- [x] (2026-11-25) `get_ApiState` returns each list **sorted by `(pos, id)`**; the in-memory lists stay sorted by id (`sorted_find_index` depends on it). Document that split in a comment at the sort sites.
+- [x] (2026-11-25) `retrieve_data` restores `pos` from the DB (check the `Message.model_validate` round-trip carries it).
+- [x] (2026-11-25) Tests (`backend/tests/test_ordering.py`, temp DB fixtures): create order is append order; `reorder` changes `get_ApiState` order for tasks and for mixed stopwatch+timer lists; order survives a fresh `TaskManager` on the same DB; delete then reorder; a stale id in the list; a malformed list changes nothing; new card after a reorder lands last; `pos` stays gap-free enough that appending still works after deletes.
+- [x] (2026-11-25) Add a regression test for the existing bug: a `reorder` command no longer raises `NotImplementedError`.
+
+*Done 2026-11-25: 24 tests in `backend/tests/test_ordering.py`, suite 164 passing. Design notes: a malformed `reorder` raises `ValueError` (the API returns a 500, like other bad commands) before anything is written; a card the client did not list keeps its place after the listed ones; `Database.execute_many` is the new one-transaction helper; each card class has a `table` attribute that `set_pos` writes to. Not exercised over HTTP — `main.py` builds a `TaskManager()` at import, which would run the live sheet sync, so the check is at `process_command` level.*
 
 ## 3. Frontend: drag handle on duration cards; tasks fixed onto the same mechanism (5a, 5b, 5j, 5h — frontend half)
 

@@ -218,6 +218,17 @@ class Database:
                 cursor.execute(command, arguments)
             con.commit()
 
+    def execute_many(self, statements : list[tuple]):
+        """Run several `(sql, params)` statements in a single transaction: all are saved, or none.
+
+        For UPDATEs only — unlike `execute`, it does not touch `last_id`.
+        """
+        with sqlite3.connect(self.db_name) as con:
+            with closing(con.cursor()) as cursor:
+                for command, arguments in statements:
+                    cursor.execute(command, arguments)
+            con.commit()
+
     def retrieveAll(self):
         """Retrieves all the data (array of tuples) + last id used:
         last id, data"""
