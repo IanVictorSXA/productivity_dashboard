@@ -14,6 +14,7 @@ import {
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
 import { useAlarmSound } from "@/app/alarmSound";
+import { useDragReorder } from "@/app/dragReorder";
 import avatarImg from "@/imports/bloodsport_pfp.jpg";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -207,8 +208,6 @@ export default function App() {
   const [modal,     setModal]     = useState<ModalState>(defaultModal());
   const [loading,   setLoading]   = useState(true);
   const [editingTask, setEditingTask] = useState<number | null>(null);
-  const [dragOver,    setDragOver]   = useState<number | null>(null);
-  const dragItem = useRef<number | null>(null);
   const [sheetSync, setSheetSync] = useState<ApiSheetSync | null>(null);
   const [syncing,   setSyncing]   = useState(false);
   const [resetArmed, setResetArmed] = useState(false); // first tap done, waiting for the confirming second tap
@@ -460,24 +459,22 @@ export default function App() {
     sendMessage({ id, type: "task", label: label, command: "edit" });
   };
 
-  // ── Drag-reorder tasks ──
-  const onDragStart = (id: number) => { dragItem.current = id; };
-  const onDragOver  = (e: React.DragEvent, id: number) => { e.preventDefault(); setDragOver(id); };
-  const onDrop      = (targetId: number) => {
-    const sourceId = dragItem.current;
-    if (sourceId === null || sourceId === targetId) { setDragOver(null); return; }
-    setTasks(prev => {
-      const arr = [...prev];
-      const si = arr.findIndex(t => t.id === sourceId);
-      const ti = arr.findIndex(t => t.id === targetId);
-      const [item] = arr.splice(si, 1);
-      arr.splice(ti, 0, item);
-      sendMessage({ type: "task", command: "reorder", order: arr.map(t => t.id) });
-      return arr;
-    });
-    dragItem.current = null;
-    setDragOver(null);
+  // ── Drag-reorder (pointer events, mouse and finger; see dragReorder.tsx) ──
+  // Both lists apply the new order locally at once, then tell the backend the
+  // full id list; the backend's saved order is what loads next time.
+  const applyOrder = <T extends { id: number }>(list: T[], order: number[]): T[] => {
+    const byId = new Map(list.map(c => [c.id, c]));
+    const ordered = order.flatMap(id => byId.get(id) ?? []);
+    return [...ordered, ...list.filter(c => !order.includes(c.id))];
   };
+  const taskDrag = useDragReorder("task", tasks.map(t => t.id), order => {
+    setTasks(prev => applyOrder(prev, order));
+    sendMessage({ type: "task", command: "reorder", order });
+  });
+  const durationDrag = useDragReorder("duration", durations.map(d => d.id), order => {
+    setDurations(prev => applyOrder(prev, order));
+    sendMessage({ type: "duration", command: "reorder", order });
+  });
 
   // ── Open create modal ──
   const openCreateModal = () => setModal({ ...defaultModal(), open: true });
@@ -779,6 +776,10 @@ export default function App() {
                   <DurationCardView
                     key={d.id}
                     card={d}
+                    handleProps={durationDrag.handleProps(d.id, d.label)}
+                    itemProps={durationDrag.itemProps(d.id)}
+                    dragging={durationDrag.dragId === d.id}
+                    dropTarget={durationDrag.dragId !== null && durationDrag.dragId !== d.id && durationDrag.overId === d.id}
                     onToggle={() => toggleRunning(d.id)}
                     onEdit={() => openEditDuration(d)}
                     onDelete={() => deleteDuration(d.id)}
@@ -825,19 +826,21 @@ export default function App() {
             {tasks.map(t => (
               <div
                 key={t.id}
-                draggable
-                onDragStart={() => onDragStart(t.id)}
-                onDragOver={e => onDragOver(e, t.id)}
-                onDrop={() => onDrop(t.id)}
-                onDragLeave={() => setDragOver(null)}
-                className="flex items-center gap-1.5 rounded-lg px-2 py-2"
+                {...taskDrag.itemProps(t.id)}
+                className="flex items-center gap-1.5 rounded-lg pr-2 py-1"
                 style={{
-                  background: dragOver === t.id ? "rgba(61,110,234,0.2)" : "#0d1628",
+                  background: taskDrag.dragId !== null && taskDrag.dragId !== t.id && taskDrag.overId === t.id ? "rgba(61,110,234,0.2)" : "#0d1628",
                   border: "1px solid rgba(61,110,234,0.2)",
-                  cursor: "grab",
+                  opacity: taskDrag.dragId === t.id ? 0.4 : 1,
                 }}
               >
-                <GripVertical size={11} style={{ color: "#2a3e6a" }} className="shrink-0" />
+                {/* Grip: the only part that starts a drag. Wider/taller than the icon so a finger can hit it. */}
+                <div
+                  {...taskDrag.handleProps(t.id, t.label)}
+                  className="flex items-center justify-center self-stretch w-7 min-h-[32px] shrink-0 rounded-l-lg"
+                >
+                  <GripVertical size={14} style={{ color: "#4a64a8" }} />
+                </div>
                 <button
                   className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
                   style={{ border: "1.5px solid #3d6eea" }}
@@ -885,6 +888,9 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {taskDrag.ghost}
+      {durationDrag.ghost}
 
       {/* ── Modal ── */}
       {modal.open && (
@@ -940,8 +946,12 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
 }
 
 // ─── Duration card view ───────────────────────────────────────────────────────
-function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
+function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, onToggle, onEdit, onDelete, onDismiss }: {
   card: DurationCard;
+  handleProps: React.HTMLAttributes<HTMLDivElement>; // spread on the grip: the only thing that starts a drag
+  itemProps: Record<string, string | number>;        // data attributes the drop-target lookup reads
+  dragging: boolean;                                 // this card is the one being dragged
+  dropTarget: boolean;                               // the dragged card is hovering over this one
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -953,8 +963,11 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
 
   return (
     <div
-      className="relative rounded-xl px-4 py-2 flex flex-col min-w-[160px]"
+      {...itemProps}
+      className="relative rounded-xl pr-4 flex min-w-[160px]"
       style={{
+        opacity: dragging ? 0.4 : 1,
+        outline: dropTarget ? "2px solid #3d6eea" : "none",
         background: "#0d1628",
         border: card.alerting ? "2px solid #e03555" : isRunning ? "1px solid rgba(61,110,234,0.7)" : "1px solid rgba(61,110,234,0.3)",
         boxShadow: isRunning ? "0 0 16px rgba(61,110,234,0.25)" : "0 0 12px rgba(61,110,234,0.1)",
@@ -963,6 +976,14 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
       }}
       onClick={() => card.alerting && onDismiss()}
     >
+      {/* Grip: full card height and ~40px wide so a finger can hit it; the only drag starter. */}
+      <div
+        {...handleProps}
+        className="flex items-center justify-center w-8 shrink-0 rounded-l-xl"
+      >
+        <GripVertical size={16} style={{ color: "#4a64a8" }} />
+      </div>
+      <div className="flex flex-col flex-1 min-w-0 py-2">
       <div className="flex items-center justify-between mb-1 gap-2">
         <div className="flex items-center gap-1 min-w-0">
           {card.subtype === "timer"
@@ -992,6 +1013,7 @@ function DurationCardView({ card, onToggle, onEdit, onDelete, onDismiss }: {
             }
           </button>
         )}
+      </div>
       </div>
     </div>
   );

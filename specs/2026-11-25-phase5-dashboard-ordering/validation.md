@@ -17,7 +17,7 @@ Fixed-size cards (§ G) were not ticked as a blocker; they are verified anyway b
 
 - [ ] `python -m pytest backend/tests/ -v` — the 140 existing tests pass unmodified, plus the new ones: `reorder` (tasks; mixed stopwatch+timer lists; survives a fresh `TaskManager`; stale ids; malformed list changes nothing; new card appended last; no `NotImplementedError`), `pos` assignment on create, `get_ApiState` order, and `mute` (persists, restores, does not change `alerting`). Record the final count here.
 - [ ] Tests use only temp DB fixtures — the production `productivity.db` is untouched.
-- [ ] `pnpm`/`npm run build` for the frontend succeeds with no type errors.
+- [ ] `pnpm`/`npm run build` for the frontend succeeds with no type errors. *(Group 3: `vite build` succeeds in the frontend container; the repo has no `tsc`/tsconfig, so there is no separate type check — Vite only strips types.)*
 
 ## Manual walkthrough
 

@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, uncommitted; Groups 3–7 not started.
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Groups 4–7 not started.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -32,12 +32,16 @@ Prove how a card can be dragged by **mouse and by finger** on this Pi before any
 
 ## 3. Frontend: drag handle on duration cards; tasks fixed onto the same mechanism (5a, 5b, 5j, 5h — frontend half)
 
-- [ ] A `GripVertical` handle on the left of `DurationCardView` (matching the task rows' icon and colour). Only the handle starts a drag. Implemented with the mechanism chosen in Group 1.
-- [ ] Dropping sends `{ type: "duration", command: "reorder", order: [...] }` with the full id list in the new order; the local list is reordered optimistically and **the backend's order is what loads next time** (already applied via Group 2).
-- [ ] Visible drag feedback (dragged card dimmed or lifted, drop position highlighted), sized for a finger.
-- [ ] **5j — fix task reorder by finger.** Move the task list's drag onto the same mechanism as the duration cards (the reported bug: it works with a mouse only). Keep the grip handle as the drag start, keep the task text's double-click-to-edit and the complete/delete buttons working, and make sure a finger drag inside the scrolling task list reorders instead of scrolling it. Remove the old native `draggable`/`onDrag*` handlers once replaced, so there is a single implementation.
-- [ ] No automatic movement anywhere: confirm `toggleRunning`, pause, ring, dismiss, reset and sheet sync never reorder `durations` (Decision 2) — read the code paths and test them in the walkthrough.
-- [ ] The existing task `reorder` call now succeeds against the backend (Group 2); check the network log shows 200, not 500.
+- [x] (2026-11-25) A `GripVertical` handle on the left of `DurationCardView` (matching the task rows' icon and colour). Only the handle starts a drag. Implemented with the mechanism chosen in Group 1.
+- [x] (2026-11-25) Dropping sends `{ type: "duration", command: "reorder", order: [...] }` with the full id list in the new order; the local list is reordered optimistically and **the backend's order is what loads next time** (already applied via Group 2).
+- [x] (2026-11-25) Visible drag feedback (dragged card dimmed or lifted, drop position highlighted), sized for a finger.
+- [x] (2026-11-25) **5j — fix task reorder by finger.** Move the task list's drag onto the same mechanism as the duration cards (the reported bug: it works with a mouse only). Keep the grip handle as the drag start, keep the task text's double-click-to-edit and the complete/delete buttons working, and make sure a finger drag inside the scrolling task list reorders instead of scrolling it. Remove the old native `draggable`/`onDrag*` handlers once replaced, so there is a single implementation.
+- [x] (2026-11-25, code read; the live walkthrough § A is still to do) No automatic movement anywhere: confirm `toggleRunning`, pause, ring, dismiss, reset and sheet sync never reorder `durations` (Decision 2) — read the code paths and test them in the walkthrough.
+- [x] (2026-11-25, throwaway backend copy on :8082) The existing task `reorder` call now succeeds against the backend (Group 2); check the network log shows 200, not 500.
+
+*Built 2026-11-25: `frontend/src/app/dragReorder.tsx` is the single drag implementation (`useDragReorder(group, ids, onReorder)` + the pure `moveId`); `App.tsx` uses it for tasks and durations and the old native `draggable`/`onDrag*` code is gone. Handle = ~32px wide, full card height (finger-sized; a task row's grip is 28px wide, min 32px tall). While dragging: source dimmed to 40%, hovered target outlined blue, a floating label follows the pointer. Dropping on the same card, on empty space, or on a card of the other list does nothing and sends nothing. The handle's click/pointerdown do not bubble, so grabbing a ringing card does not dismiss it. Not done: auto-scroll of the task list when dragging near its edge — a drag only reaches rows currently visible.*
+
+*Checked by machine (headless Chromium over CDP, `/api` faked so no real DB is touched; script `drag_check.mjs`, 14/14): mouse and **emulated** touch drags reorder durations and tasks and send the right `reorder` body; drop on empty space / other list is ignored; play button still sends `resume` and does not reorder; mid-drag feedback present; no console errors. Over HTTP, a throwaway copy of the backend returned 200 for task and duration `reorder` and returned the new order. The **real finger** check is the user's (validation § B).*
 
 ## 4. Derived order: events by time, completed tasks last (5f, 5g)
 
