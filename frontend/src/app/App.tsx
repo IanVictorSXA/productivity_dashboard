@@ -10,6 +10,8 @@ import {
   GripVertical,
   Pencil,
   RefreshCw,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import { Button } from "@/app/components/ui/button";
@@ -58,15 +60,16 @@ type ApiDuration = {
   accumulated_ms: number;
   started_at: number | null; // epoch ms when last resumed; null = paused
   alerting: boolean;
+  muted?: boolean; // timers only; absent on stopwatches
 };
 type ApiTask  = { id: number; label: string; completed: boolean };
-type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean };
+type ApiEvent = { id: number; label: string; ring_time: string; alerting: boolean; completed: boolean; muted?: boolean };
 // status: disabled (sync off — hide the button), ok, skipped (already synced today), error
 type ApiSheetSync = { date: string | null; status: "disabled" | "ok" | "skipped" | "error"; detail: string };
 type ApiState = { last_id?: number, events?: ApiEvent[]; durations?: ApiDuration[]; tasks?: ApiTask[]; sheet_sync?: ApiSheetSync | null };
 
 // ─── Frontend types ───────────────────────────────────────────────────────────
-type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean };
+type EventCard = { id: number; label: string; ringTime: Date; alerting: boolean; completed: boolean; muted: boolean };
 
 /**
  * Timer state is timestamp-based so display values are always computed from
@@ -83,6 +86,7 @@ type DurationCard = {
   accumulatedMs: number;    // ms elapsed before the last resume
   startedAt: number | null; // Date.now() when last resumed; null = paused
   alerting: boolean;
+  muted: boolean;           // timers only (5d): rings silently, still blinks; always false on stopwatches
 };
 
 type Task = { id: number; label: string; completed: boolean };
@@ -265,10 +269,10 @@ export default function App() {
         loadedDurations = (state.durations ?? []).map(d => ({
           id: d.id, label: d.label, subtype: d.subtype,
           totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
-          startedAt: d.started_at, alerting: d.alerting,
+          startedAt: d.started_at, alerting: d.alerting, muted: d.muted ?? false,
         }));
         loadedEvents = (state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         }));
         loadedTasks = (state.tasks ?? []).map(t => ({
           id: t.id, label: t.label, completed: t.completed,
@@ -281,7 +285,7 @@ export default function App() {
         if (!loadedDurations.some(d => d.label === name)) {
           const card: DurationCard = {
             id: genId(), label: name, subtype: "stopwatch",
-            totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false,
+            totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false, muted: false,
           };
           toCreate.push(card);
           sendMessage({ id: card.id, type: "duration", type_duration: "stopwatch", label: name, current_time: nowTimeStr(), command: "create" });
@@ -309,7 +313,7 @@ export default function App() {
       if (state) {
         _nextId = Math.max(_nextId, state.last_id ?? 0);
         setEvents((state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         })));
         setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
         setSheetSync(state.sheet_sync ?? null);
@@ -343,10 +347,10 @@ export default function App() {
         setDurations((state.durations ?? []).map(d => ({
           id: d.id, label: d.label, subtype: d.subtype,
           totalMs: d.total_ms, accumulatedMs: d.accumulated_ms,
-          startedAt: d.started_at, alerting: d.alerting,
+          startedAt: d.started_at, alerting: d.alerting, muted: d.muted ?? false,
         })));
         setEvents((state.events ?? []).map(e => ({
-          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed,
+          id: e.id, label: e.label, ringTime: new Date(e.ring_time), alerting: e.alerting, completed: e.completed, muted: e.muted ?? false,
         })));
         setTasks((state.tasks ?? []).map(t => ({ id: t.id, label: t.label, completed: t.completed })));
         setSheetSync(state.sheet_sync ?? null);
@@ -390,9 +394,12 @@ export default function App() {
   //
   // Checked as `subtype === "timer"` rather than "any duration" so a stopwatch
   // can never trigger sound, even if its `alerting` flag were ever set.
+  // 5d: a muted card still blinks and needs dismissal, but only an un-muted
+  // alerting card keeps the sound going — so muting the last audible card stops
+  // it, and un-muting a ringing one starts it again.
   useAlarmSound(
-    events.some(e => e.alerting) ||
-    durations.some(d => d.subtype === "timer" && d.alerting)
+    events.some(e => e.alerting && !e.muted) ||
+    durations.some(d => d.subtype === "timer" && d.alerting && !d.muted)
   );
 
   // ── Toggle running ──────────────────────────────────────────────────────────
@@ -650,7 +657,7 @@ export default function App() {
     if (mode === "duration") {
       const id = genId();
       if (subtype === "stopwatch") {
-        const card: DurationCard = { id, label: lbl, subtype: "stopwatch", totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false };
+        const card: DurationCard = { id, label: lbl, subtype: "stopwatch", totalMs: 0, accumulatedMs: 0, startedAt: null, alerting: false, muted: false };
         setDurations(prev => [...prev, card]);
         sendMessage({ id, type: "duration", type_duration: "stopwatch", label: lbl, current_time: nowTimeStr(), command: "create" });
       } else {
@@ -661,7 +668,7 @@ export default function App() {
           totalMs = parseHhMmSs(hh, mm, ss);
         }
         if (totalMs <= 0) totalMs = 3600000;
-        const card: DurationCard = { id, label: lbl, subtype: "timer", totalMs, accumulatedMs: 0, startedAt: null, alerting: false };
+        const card: DurationCard = { id, label: lbl, subtype: "timer", totalMs, accumulatedMs: 0, startedAt: null, alerting: false, muted: false };
         setDurations(prev => [...prev, card]);
         sendMessage({ id, type: "duration", type_duration: "timer", label: lbl, current_time: nowTimeStr(), total_time: fmtMs(totalMs), command: "create" });
       }
@@ -674,7 +681,7 @@ export default function App() {
         const ms = parseHhMmSs(hh, mm, ss);
         ringTime = new Date(Date.now() + (ms || 3600000));
       }
-      setEvents(prev => [...prev, { id, label: lbl, ringTime, alerting: false, completed: false }]);
+      setEvents(prev => [...prev, { id, label: lbl, ringTime, alerting: false, completed: false, muted: false }]);
       sendMessage({ id, type: "event", label: lbl, ring_time: ringTime.toISOString(), command: "create" });
     }
     setModal(defaultModal());
@@ -690,6 +697,18 @@ export default function App() {
     return prev.map(e => e.id === id ? { ...e, alerting: false, completed: true } : e);
   });
 }, []);
+
+  // ── Mute (5d) ──
+  // Sends the desired state (a set, not a toggle) so a retried request cannot flip it back.
+  const setEventMuted = useCallback((id: number, muted: boolean) => {
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, muted } : e));
+    sendMessage({ id, type: "event", command: "mute", muted });
+  }, []);
+
+  const setTimerMuted = useCallback((id: number, muted: boolean) => {
+    setDurations(prev => prev.map(d => d.id === id ? { ...d, muted } : d));
+    sendMessage({ id, type: "duration", command: "mute", muted });
+  }, []);
 
   const dismissDuration = useCallback((id: number) => {
   setDurations(prev => {
@@ -798,6 +817,7 @@ export default function App() {
                     onEdit={() => openEditEvent(ev)}
                     onDelete={() => deleteEvent(ev.id)}
                     onDismiss={() => dismissEvent(ev.id)}
+                    onMute={() => setEventMuted(ev.id, !ev.muted)}
                   />
                 ))}
                 {events.length === 0 && (
@@ -824,6 +844,7 @@ export default function App() {
                     onEdit={() => openEditDuration(d)}
                     onDelete={() => deleteDuration(d.id)}
                     onDismiss={() => dismissDuration(d.id)}
+                    onMute={() => setTimerMuted(d.id, !d.muted)}
                   />
                 ))}
                 {durations.length === 0 && (
@@ -951,11 +972,12 @@ export default function App() {
 }
 
 // ─── Event card view ──────────────────────────────────────────────────────────
-function EventCardView({ card, onEdit, onDelete, onDismiss }: {
+function EventCardView({ card, onEdit, onDelete, onDismiss, onMute }: {
   card: EventCard;
   onEdit: () => void;
   onDelete: () => void;
   onDismiss: () => void;
+  onMute: () => void;
 }) {
   // getDisplayMs uses Date.now() internally, so this is always current
   const remaining = msUntil(card.ringTime);
@@ -975,6 +997,7 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
       <div className="flex items-center justify-between mb-1 gap-2">
         <span className="text-sm truncate min-w-0" style={{ color: "#b0c8f0" }}>{card.label}</span>
         <div className="flex items-center gap-1 shrink-0">
+          <MuteBtn muted={card.muted} onClick={e => { e.stopPropagation(); onMute(); }} />
           <IconBtn onClick={e => { e.stopPropagation(); onEdit(); }}><Pencil size={9} className="text-blue-300" /></IconBtn>
           <IconBtn onClick={e => { e.stopPropagation(); onDelete(); }}><X size={9} className="text-blue-300" /></IconBtn>
         </div>
@@ -989,7 +1012,7 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
 }
 
 // ─── Duration card view ───────────────────────────────────────────────────────
-function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, onToggle, onEdit, onDelete, onDismiss }: {
+function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, onToggle, onEdit, onDelete, onDismiss, onMute }: {
   card: DurationCard;
   handleProps: React.HTMLAttributes<HTMLDivElement>; // spread on the grip: the only thing that starts a drag
   itemProps: Record<string, string | number>;        // data attributes the drop-target lookup reads
@@ -999,6 +1022,7 @@ function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, 
   onEdit: () => void;
   onDelete: () => void;
   onDismiss: () => void;
+  onMute: () => void;                                // timers only; a stopwatch card never shows the button
 }) {
   // getDisplayMs calls Date.now() — always accurate, never stale-tick-based
   const display    = getDisplayMs(card);
@@ -1037,6 +1061,9 @@ function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, 
           <span className="text-sm truncate" style={{ color: "#b0c8f0" }}>{card.label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {card.subtype === "timer" && (
+            <MuteBtn muted={card.muted} onClick={e => { e.stopPropagation(); onMute(); }} />
+          )}
           <IconBtn onClick={e => { e.stopPropagation(); onEdit(); }}><Pencil size={9} className="text-blue-300" /></IconBtn>
           <IconBtn onClick={e => { e.stopPropagation(); onDelete(); }}><X size={9} className="text-blue-300" /></IconBtn>
         </div>
@@ -1225,6 +1252,25 @@ function IconBtn({ onClick, children }: { onClick: React.MouseEventHandler; chil
       onClick={onClick}
     >
       {children}
+    </button>
+  );
+}
+
+// Speaker toggle for a timer or event (5d). Same 20px circle as the edit/delete IconBtns so the
+// header row (and the fixed card height measured with it) is unchanged. Muted = crossed speaker
+// in the alert red.
+function MuteBtn({ muted, onClick }: { muted: boolean; onClick: React.MouseEventHandler }) {
+  return (
+    <button
+      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+      style={{ background: muted ? "#3a1a26" : "#1e2a44" }}
+      aria-label={muted ? "Unmute" : "Mute"}
+      aria-pressed={muted}
+      onClick={onClick}
+    >
+      {muted
+        ? <VolumeX size={11} style={{ color: "#ff6b81" }} />
+        : <Volume2 size={11} className="text-blue-300" />}
     </button>
   );
 }

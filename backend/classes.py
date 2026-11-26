@@ -73,7 +73,7 @@ class Message(BaseModel):
     alerting: bool = False # only ever set from a saved DB row, so a ringing card survives a restart; the frontend never sends it
     pos: int = 0 # saved display position; only trusted when restoring a DB row — `create` assigns a fresh one
     order: list[int] | None = None # `reorder` only: every card id of that kind, in the desired display order
-    muted: bool = False # timers/events: ring silently (the alert still blinks). Used from Phase 5 Group 6
+    muted: bool = False # timers/events: ring silently (the alert still blinks). For `mute` it is the desired state, and a restored row carries its saved value
     source: str | None = "local" # 'local' (made on the dashboard) or 'sheet' (imported from Google Sheets)
     sheet_key: str | None = None # raw column-A cell text; the key the sheet sync diffs on
 
@@ -105,7 +105,8 @@ class Task:
 
         self.deleted = False
         self.alerting = msg.alerting
-
+        # Only Event and Timer persist/serve this; see their `mute`.
+        self.muted = msg.muted
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this task's initial row into the `tasks` table."""
@@ -149,6 +150,10 @@ class Task:
         self.alerting = False
         return "UPDATE tasks SET alerting = 0 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set whether this card rings silently. Only events and timers can be muted."""
+        raise ValueError("mute: only timers and events can be muted")
+
     def get_ApiTask(self):
         """Serialize for the `GET /api` response's `tasks` list."""
         task = dict(id=self.id, label=self.label, completed=self.completed,
@@ -176,8 +181,8 @@ class Event(Task):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this event's initial row into the `events` table."""
-        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", \
-            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.source, self.sheet_key)
+        return "INSERT OR IGNORE INTO events (id, label, ring_time, alerting, completed, deleted, pos, muted, source, sheet_key) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+            (self.id, self.label, self.ring_time.isoformat(), self.alerting, self.completed, self.deleted, self.pos, self.muted, self.source, self.sheet_key)
 
     def edit(self, msg : Message):
         """Rename and/or reschedule the ring time."""
@@ -211,9 +216,14 @@ class Event(Task):
         self.completed = True
         return "UPDATE events SET alerting = 0, completed = 1 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set (not toggle) the mute flag; touches neither `alerting` nor `completed`."""
+        self.muted = bool(msg.muted)
+        return "UPDATE events SET muted = ? WHERE id = ?", (self.muted, self.id)
+
     def get_ApiEvent(self):
         """Serialize for the `GET /api` response's `events` list."""
-        return self.get_ApiTask() | dict(ring_time=str(self.ring_time), alerting=self.alerting)
+        return self.get_ApiTask() | dict(ring_time=str(self.ring_time), alerting=self.alerting, muted=self.muted)
 
 class Duration(Task):
     """A stopwatch: counts up from `elapsed` while running, freezes while paused.
@@ -340,11 +350,11 @@ class Timer(Duration):
 
     def get_tuple_to_save(self):
         """SQL + params to INSERT this timer's initial row into the `timers` table."""
-        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, alerting, completed, paused, deleted, pos) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
+        return "INSERT OR IGNORE INTO timers (id, label, current_time, total_time, remaining_time, elapsed, total_elapsed, alerting, completed, paused, deleted, pos, muted) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", \
             (self.id, self.label, self.current_time.strftime(time_format), self.get_elapsed_str(self.total_time),
              self.get_elapsed_str(self.remaining_time), self.get_elapsed_str(self.elapsed),
              self.get_elapsed_str(self.total_elapsed), self.alerting, self.completed, self.paused,
-             self.deleted, self.pos)
+             self.deleted, self.pos, self.muted)
 
     def pause(self, msg: Message):
         """Freeze the countdown; `msg` carries the frontend's just-computed elapsed/remaining time."""
@@ -425,6 +435,11 @@ class Timer(Duration):
         self.alerting = False
         return "UPDATE timers SET alerting = 0 WHERE id = ?", (self.id,)
 
+    def mute(self, msg : Message):
+        """Set (not toggle) the mute flag; touches neither `alerting` nor the countdown."""
+        self.muted = bool(msg.muted)
+        return "UPDATE timers SET muted = ? WHERE id = ?", (self.muted, self.id)
+
     def get_ApiDuration(self):
         """Serialize for the `GET /api` response's `durations` list (see `Duration.get_ApiDuration`)."""
         elapsed_ms = self.elapsed.total_seconds() * 1000
@@ -432,7 +447,7 @@ class Timer(Duration):
         total_ms = self.total_time.total_seconds() * 1000
         timer = dict(id=self.id, label=self.label, subtype="timer",
                          total_ms=total_ms, accumulated_ms=elapsed_ms, started_at=started_at,
-                         alerting=self.alerting)
+                         alerting=self.alerting, muted=self.muted)
         return timer
 
 class TaskManager:
@@ -531,6 +546,8 @@ class TaskManager:
                 command, arguments = self.ring(msg)
             case "stop_ring":
                 command, arguments = self.stop_ring(msg)
+            case "mute":
+                command, arguments = self.mute(msg)
             case "reorder":
                 # Persists many rows itself, in one transaction, so there is no
                 # single (command, arguments) tuple to hand to db.execute below.
@@ -820,6 +837,24 @@ class TaskManager:
                 return self.stop_ring_helper(self.durations, msg)
             case "event":
                 return self.stop_ring_helper(self.events, msg)
+
+    def mute(self, msg : Message):
+        """Set a timer's or event's mute flag to `msg.muted` (a set, so a retry cannot flip it back).
+
+        Stopwatches and tasks cannot be muted; asking raises `ValueError`.
+        """
+        match msg.type:
+            case "duration":
+                cards = self.durations
+            case "event":
+                cards = self.events
+            case _:
+                raise ValueError(f"mute: cannot mute type {msg.type!r}")
+
+        index = sorted_find_index(cards, msg.id)
+        if index == -1:
+            return "", ()  # deleted since the click: nothing to mute
+        return cards[index].mute(msg)
 
     def complete_helper(self, sorted_ids : list[Task], msg : Message):
         """Find `msg.id` in `sorted_ids` and toggle its completed state."""

@@ -66,6 +66,8 @@ The frontend expects the API at `http://localhost:8080/api` (see `API_ENDPOINT` 
 
 If you're updating a checkout that already has a `productivity.db` from before Phase 3, **drop the old `events` and `tasks` tables, or delete `productivity.db` outright, before the first run of this version.** There is no migration code by design (see `specs/2026-07-26-phase3-sheets-kiosk/requirements.md` § Schema changes) — the two tables gain `source`/`sheet_key` columns, declared only in `CREATE TABLE IF NOT EXISTS`, so they're created with the new shape only if they don't already exist. Skipping this isn't a sync-only problem: with the old table shape, creating *any* card — including one you make by hand on the dashboard — fails with `sqlite3.OperationalError: table tasks has no column named source`. Do the drop on an empty board, since any cards in those tables at that moment are lost. A fresh checkout with no existing `productivity.db` needs no action.
 
+**Phase 5 repeats this once more, for the `timers` and `events` tables.** They gain a `muted` column (the mute button on timer and event cards). On a `productivity.db` from before this version, drop both tables (or delete the file) before the first run: until you do, loading the board still works, but creating any timer or event fails with `sqlite3.OperationalError: table events has no column named muted` (or `timers`), and the mute button's save fails the same way. Do it on an empty board — cards in those two tables are lost, and the sheet's events return on the next manual sync. For example, with the backend stopped: `python3 -c "import sqlite3; c = sqlite3.connect('backend/productivity.db'); c.execute('DROP TABLE timers'); c.execute('DROP TABLE events'); c.commit()"`; the next start recreates them with the new shape. Stopwatches and tasks are unaffected.
+
 ## Google Sheets sync
 
 The dashboard can load the day's events and tasks from a Google Sheet — once automatically at startup, and again on demand from a button in the header. It's read-only: the dashboard never writes to, or deletes from, the spreadsheet.
@@ -222,6 +224,15 @@ Sent once when the app shuts down. It's a no-op on the backend — no cards are 
 ```
 
 Sent by the header sync button (see "Google Sheets sync" above). Re-runs the same reconciliation as the automatic startup sync, but bypasses the once-per-day marker. A no-op with `SHEETS_SYNC_ENABLED` unset. Never returns an error status to the HTTP caller — check `sheet_sync` on the next `GET /api` for the outcome.
+
+### Mute (timers and events only)
+
+```json
+{ "command": "mute", "type": "duration", "id": 7, "muted": true }
+{ "command": "mute", "type": "event",    "id": 3, "muted": false }
+```
+
+Sets (never toggles) whether a timer or event rings silently, so a retried request can't flip it the wrong way. A muted card still blinks and still needs dismissal; only the sound is skipped. Saved immediately and restored after a backend restart. It changes nothing else (`alerting`, the countdown, `completed`). `muted` is returned on timers (`durations` entries with `subtype: "timer"`) and events in `GET /api`; stopwatches have no such field. Muting a stopwatch or a task is rejected (`ValueError`, so a 500); an id that was deleted in the meantime is ignored.
 
 ### Reset (whole board)
 

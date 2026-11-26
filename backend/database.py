@@ -72,6 +72,8 @@ class Database:
                 # no migration code by design — an existing events/tasks table is
                 # left untouched by CREATE TABLE IF NOT EXISTS, so the upgrade
                 # requires dropping both tables by hand (see README).
+                # `muted` (events and timers only, Phase 5) follows the same rule:
+                # `timers` and `events` must be dropped once to gain the column.
                 cursor.execute("""CREATE TABLE IF NOT EXISTS events(
                             id INTEGER UNIQUE,
                             type TEXT DEFAULT event,
@@ -81,6 +83,7 @@ class Database:
                             completed BOOLEAN DEFAULT 0,
                             deleted BOOLEAN,
                             pos INTEGER,
+                            muted BOOLEAN DEFAULT 0,
                             source TEXT DEFAULT 'local',
                             sheet_key TEXT)""")
 
@@ -120,7 +123,8 @@ class Database:
                             completed BOOLEAN,
                             paused BOOLEAN,
                             deleted BOOLEAN,
-                            pos INTEGER )""")
+                            pos INTEGER,
+                            muted BOOLEAN DEFAULT 0 )""")
 
                 # One row per calendar date: has today's sheet import already run,
                 # and how did it go. Not in `tables`, so `deleteAll()` never wipes it.
