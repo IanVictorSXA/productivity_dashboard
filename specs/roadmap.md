@@ -62,22 +62,22 @@ See `specs/2026-07-26-phase3-sheets-kiosk/` for plan, requirements, and validati
 - [x] **4e.** Sound keeps playing (or repeats) until the alert is dismissed, and stops on dismissal
 - [x] **4f.** Sound asset bundled locally — no network fetch at ring time
 
-Stopwatches count up and have no zero to reach, so they are out of scope here. See `specs/2026-11-08-phase4-alarm-sound/` for plan, requirements, and validation; the fresh-kiosk first ring was heard by the user (2026-11-15); a real reboot was also run and the next event rang (2026-11-15) — see `validation.md` § F. Per-card muting of the sound is Phase 5 (**5d**).
+Stopwatches count up and have no zero to reach, so they are out of scope here. See `specs/2026-11-08-phase4-alarm-sound/` for plan, requirements, and validation; the fresh-kiosk first ring was heard by the user (2026-11-15); a real reboot was also run and the next event rang (2026-11-15) — see `validation.md` § F. Per-card muting of the sound arrived in Phase 5 (**5d**).
 
 ## Phase 5 — Dashboard layout & ordering
 
 Presentation-layer work on the existing cards: manual ordering by a grip handle, stable layout, muting, and order that survives a restart. No new tracking categories. Stopwatches and timers share one "Tasks Duration" list, so 5a/5b are one drag mechanism. **Cards never move by themselves** — the earlier "promotion" idea (old 5e) was dropped on 2026-11-25 in favour of a red pause button.
 
-- [ ] **5a.** Drag-to-reorder stopwatches by a grip handle (the six-dot icon the task rows already have), with a mouse **or a finger** on the touchscreen
-- [ ] **5b.** Drag-to-reorder timers, same handle and mechanism
-- [ ] **5c.** Cards keep a fixed size — a card must not grow or shrink as the numbers inside it change (e.g. `09:59` → `10:00`, or crossing into hours)
-- [ ] **5d.** Mute toggle on timers and events: a clickable mute icon on the card, persisted. Muted cards make no sound but still blink/alert visually and still require dismissal. (Stopwatches get theirs in Phase 6.)
-- [ ] **5e.** A running stopwatch or timer shows a **red** pause button, so what is running is visible at a glance. Replaces "play/resume promotion": no card ever moves by itself, only by the user's drag
-- [ ] **5f.** Events are always sorted by increasing ring time (soonest first). Events are **not** manually reorderable; their order is derived from their times
-- [ ] **5g.** Tasks marked complete move to the end of the task list
-- [ ] **5h.** Order is persisted, so stopwatches, timers, and tasks come back in the same order after a reload or backend restart (this also fixes the task `reorder` command, which the backend never implemented)
-- [ ] **5i.** Each event shows, below its countdown, the hour and minute it will ring, in small gray print
-- [ ] **5j.** Fix: task reorder works by finger on the touchscreen (today it only works with a mouse); tasks use the same drag mechanism as the duration cards
+- [x] **5a.** Drag-to-reorder stopwatches by a grip handle (the six-dot icon the task rows already have), with a mouse **or a finger** on the touchscreen
+- [x] **5b.** Drag-to-reorder timers, same handle and mechanism
+- [x] **5c.** Cards keep a fixed size — a card must not grow or shrink as the numbers inside it change (e.g. `09:59` → `10:00`, or crossing into hours)
+- [x] **5d.** Mute toggle on timers and events: a clickable mute icon on the card, persisted. Muted cards make no sound but still blink/alert visually and still require dismissal. (Stopwatches get theirs in Phase 6.)
+- [x] **5e.** A running stopwatch or timer shows a **red** pause button, so what is running is visible at a glance. Replaces "play/resume promotion": no card ever moves by itself, only by the user's drag
+- [x] **5f.** Events are always sorted by increasing ring time (soonest first). Events are **not** manually reorderable; their order is derived from their times
+- [x] **5g.** Tasks marked complete move to the end of the task list
+- [x] **5h.** Order is persisted, so stopwatches, timers, and tasks come back in the same order after a reload or backend restart (this also fixes the task `reorder` command, which the backend never implemented)
+- [x] **5i.** Each event shows, below its countdown, the hour and minute it will ring, in small gray print
+- [x] **5j.** Fix: task reorder works by finger on the touchscreen (today it only works with a mouse); tasks use the same drag mechanism as the duration cards
 
 See `specs/2026-11-25-phase5-dashboard-ordering/` for plan, requirements, and validation (branch `phase5-dashboard-ordering`).
 

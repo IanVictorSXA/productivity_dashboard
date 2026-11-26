@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Group 4 (derived order) done and committed `e7002b8`; Group 5 (card visuals) built 2026-11-25; Group 6 (mute) built 2026-11-25, awaiting the table drop, the real speaker/finger check and commit review; Group 7 not started.
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Group 4 (derived order) done and committed `e7002b8`; Group 5 (card visuals) built 2026-11-25; Group 6 (mute) built 2026-11-25, awaiting the table drop, the real speaker/finger check and commit review; Group 7 (docs) done 2026-11-25; the user ran the on-device walkthrough and the live table drop and reported all working (2026-11-25); branch merged.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -77,7 +77,7 @@ Prove how a card can be dragged by **mouse and by finger** on this Pi before any
 
 ## 7. Docs, walkthrough and close-out
 
-- [ ] `specs/roadmap.md`: tick 5a–5i with dates; `specs/tech-stack.md` § Dashboard Ordering rewritten to match what was built (backend-owned `pos`, `reorder`/`mute` commands, the mechanism chosen in Group 1, the corrected `react-dnd` note); README gets the ordering/mute behaviour and the table-drop note; `CLAUDE.md` status updated.
-- [ ] Run `validation.md` in full on the real app and the real touchscreen; record results there, with honest gaps.
-- [ ] Full backend suite green; no traceback in the backend log and no console errors during the walkthrough.
-- [ ] Commit per group, user reviews each summary first; merge only when the `validation.md` merge bar is met.
+- [x] (2026-11-25) `specs/roadmap.md`: 5a-5j ticked; `specs/tech-stack.md` § Dashboard Ordering rewritten to what was built (backend-owned `pos`, `reorder`/`mute`, pointer-event drag chosen in Group 1, `react-dnd` unused, fixed sizes, derived order); README gets a "Dashboard ordering & mute" section, a `reorder` API entry and updated intro/feature lines (the table-drop note and `mute` entry were already there from Group 6); `CLAUDE.md` status updated.
+- [x] (2026-11-25, user) Run `validation.md` in full on the real app and the real touchscreen: reported all working. Scripted results are tabulated in `validation.md` § Results.
+- [x] (2026-11-25) Full backend suite green: **178 passed**; `vite build` succeeds. No traceback/console error in the scripted runs; the live-walkthrough check is still open.
+- [x] (2026-11-25) Merge bar met; committed and merged to `main` with the user's approval.

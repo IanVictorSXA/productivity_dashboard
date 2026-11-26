@@ -1,6 +1,6 @@
 # Productivity Dashboard
 
-A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–4 are complete, including the audible alarm; Phase 5, dashboard interaction and ordering, is next; voice control is parked).
+A distraction-free productivity station for a dedicated Raspberry Pi touchscreen. Instead of managing a to-do list, it measures how time is actually spent — via timers, mutually-exclusive stopwatches, and scheduled events — and turns that raw activity into daily/weekly/monthly insight. See `specs/mission.md` for the full mission statement and non-goals, and `specs/roadmap.md` for the phased build-out (Phases 0–4 are complete, including the audible alarm; Phase 5, dashboard layout and ordering, is complete; voice control is parked).
 
 ## Features
 
@@ -13,7 +13,8 @@ A distraction-free productivity station for a dedicated Raspberry Pi touchscreen
 - **Alarm sound** — when a timer or event hits zero, a looping tone plays until the last ringing card is dismissed. Stopwatches never make sound. See "Alarm sound" below.
 - **Reset button** — the "RST" button in the header clears the board back to a clean start of day (see below).
 - **Kiosk autostart** — on the Pi, the dashboard comes up full-screen with no keyboard, mouse, or login step after a reboot or power cut. See `deploy/README.md`.
-- **Planned**: dashboard layout and ordering — drag-to-reorder cards by a grip handle, fixed-size cards, red pause button, event ring times, mute on timers and events (Phase 5); goals, limits and timers/stopwatches loaded from the sheet (Phase 6); custom alert sounds (Phase 7); historical analytics plus the end-of-day upload to Sheets (Phase 8); a local LLM on the AI HAT+2 with a daily productivity report (Phase 9). Full voice control — wake word → speech-to-text → intent → action — is still the long-term goal but is parked, with no phase number yet.
+- **Dashboard layout & ordering** — stopwatches, timers and tasks reorder by a grip handle (mouse or finger) and keep their order across reloads and restarts; events sort by ring time and show it; cards are a fixed size; a running card's pause button is red; timers and events can be muted. See "Dashboard ordering & mute" below.
+- **Planned**: goals, limits and timers/stopwatches loaded from the sheet (Phase 6); custom alert sounds (Phase 7); historical analytics plus the end-of-day upload to Sheets (Phase 8); a local LLM on the AI HAT+2 with a daily productivity report (Phase 9). Full voice control — wake word → speech-to-text → intent → action — is still the long-term goal but is parked, with no phase number yet.
 
 ## Tech Stack
 
@@ -128,6 +129,14 @@ When any timer or event is ringing, one shared tone loops until the last ringing
   - Speaker, outside the browser: `python backend/experiments/alarm_test.py -D plughw:CARD=UACDemoV10,DEV=0`. On this Pi the default ALSA device fails (`Unknown error 524`), so the `-D` flag is required; run `aplay -L` to find the device name on a different setup.
 - **A ringing card survives a backend restart.** The `alerting` flag is saved to and restored from the database, so a restart mid-ring comes back still ringing (and, on a page reload, sounding).
 
+## Dashboard ordering & mute
+
+- **Reordering.** Stopwatches and timers share one list; each card has a six-dot grip handle on its left (tasks have the same). Press and drag the handle — with a mouse or a finger — and drop it on another card. Only the handle starts a drag, so tapping the card body (e.g. to dismiss a ringing alert) never does. Dragging uses hand-written pointer events because the browser's native drag-and-drop does not work by finger on the Pi's touchscreen. **Cards never move by themselves** — starting, pausing, ringing or dismissing leaves the order alone; a new card is added last.
+- **Order is saved.** The backend stores each card's position (`pos`) and returns the lists in that order, so it survives a page reload and a backend restart. See the `reorder` entry in the API reference.
+- **Derived order.** Events are always sorted soonest-first by ring time (not draggable) and show that time under the countdown. Completed tasks drop to the end of the task list and return to their slot when un-ticked.
+- **Fixed-size cards and red pause.** A card does not change size as its numbers change (224×88 px stopwatch/timer, 224×100 px event at 1024×600). A running card shows a red pause button; a paused one shows a blue play button.
+- **Mute.** Timer and event cards have a speaker icon. A muted card rings silently — it still blinks red and still needs a tap to dismiss — and the mute is saved. If a muted and an un-muted card ring together, the sound plays until the un-muted one is dismissed. Stopwatches have no mute (they never make sound). Needs a one-time table drop on a database from before Phase 5 — see "One-time upgrade step" above.
+
 ## Running the tests
 
 ```bash
@@ -224,6 +233,15 @@ Sent once when the app shuts down. It's a no-op on the backend — no cards are 
 ```
 
 Sent by the header sync button (see "Google Sheets sync" above). Re-runs the same reconciliation as the automatic startup sync, but bypasses the once-per-day marker. A no-op with `SHEETS_SYNC_ENABLED` unset. Never returns an error status to the HTTP caller — check `sheet_sync` on the next `GET /api` for the outcome.
+
+### Reorder (stopwatches/timers together, and tasks)
+
+```json
+{ "command": "reorder", "type": "duration", "order": [3, 1, 2] }
+{ "command": "reorder", "type": "task",     "order": [4, 6, 5] }
+```
+
+`order` is the full list of ids in the desired order; each card's `pos` becomes its index, saved in one transaction. A card not listed keeps its place after the listed ones, an id that was deleted in the meantime is ignored, and a malformed list (wrong kind, duplicates) is rejected with nothing changed (`ValueError`, so a 500). Events cannot be reordered — they sort by ring time. `GET /api` returns each list sorted by `(pos, id)`.
 
 ### Mute (timers and events only)
 

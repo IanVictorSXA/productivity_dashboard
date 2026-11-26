@@ -1,6 +1,6 @@
 # Validation — Phase 5: Dashboard layout & ordering
 
-How we know this phase works and can merge. Nothing is run yet (spec written 2026-11-25). Run it against the real app, and for anything involving a finger, on the **real Pi touchscreen** — not a mouse standing in for one.
+How we know this phase works and can merge. Spec written 2026-11-25; the automated part and the scripted checks are recorded in Results below, the on-device walkthrough is still the user's. Run it against the real app, and for anything involving a finger, on the **real Pi touchscreen** — not a mouse standing in for one.
 
 ## Merge bar
 
@@ -15,9 +15,9 @@ Fixed-size cards (§ G) were not ticked as a blocker; they are verified anyway b
 
 ## Automated
 
-- [ ] `python -m pytest backend/tests/ -v` — the 140 existing tests pass unmodified, plus the new ones: `reorder` (tasks; mixed stopwatch+timer lists; survives a fresh `TaskManager`; stale ids; malformed list changes nothing; new card appended last; no `NotImplementedError`), `pos` assignment on create, `get_ApiState` order, and `mute` (persists, restores, does not change `alerting`). Record the final count here.
-- [ ] Tests use only temp DB fixtures — the production `productivity.db` is untouched.
-- [ ] `pnpm`/`npm run build` for the frontend succeeds with no type errors. *(Group 3: `vite build` succeeds in the frontend container; the repo has no `tsc`/tsconfig, so there is no separate type check — Vite only strips types.)*
+- [x] (2026-11-25: **178 passed**, 0.8 s; 140 original + 24 in `test_ordering.py` + 14 in `test_mute.py`) `python -m pytest backend/tests/ -v` — the 140 existing tests pass unmodified, plus the new ones: `reorder` (tasks; mixed stopwatch+timer lists; survives a fresh `TaskManager`; stale ids; malformed list changes nothing; new card appended last; no `NotImplementedError`), `pos` assignment on create, `get_ApiState` order, and `mute` (persists, restores, does not change `alerting`). Record the final count here.
+- [x] (temp-DB fixtures only; the live DB was not opened by any test) Tests use only temp DB fixtures — the production `productivity.db` is untouched.
+- [x] (2026-11-25, Group 7: `npx vite build` in the frontend container, built in ~4 s; the generated `frontend/dist/` was removed afterwards) `pnpm`/`npm run build` for the frontend succeeds with no type errors. *(Group 3: `vite build` succeeds in the frontend container; the repo has no `tsc`/tsconfig, so there is no separate type check — Vite only strips types.)*
 
 ## Manual walkthrough
 
@@ -94,8 +94,32 @@ Set up first: start the app on a **backed-up or throwaway** `productivity.db` (t
 
 ## Results
 
-*Not run yet.* Record, per step: pass/fail, how it was checked (by eye on the touchscreen, by scripted CDP run on a faked backend, by pytest), and any honest gaps — the same format Phase 4 used.
+Recorded 2026-11-25 (Group 7). **"Scripted" = headless Chromium over CDP against a faked `/api` or a throwaway copy of the backend with its own empty DB — the live backend, DB and sheet were not touched, and no sound was heard. It is not a real finger or a real speaker.**
+
+| § | Item | Status | How checked / honest gap |
+|---|---|---|---|
+| Automated | pytest 178, build | **pass** | pytest and `vite build`, above |
+| A | Cards never move by themselves | **partly** | Code read (Group 3) and scripted: play/pause sends only `resume`/`pause`, no `reorder`; completing/un-completing sends only `complete`. Not done on the live board: ring + dismiss, mutually-exclusive auto-pause, sync/RST cancel by hand |
+| B | Drag by mouse and finger (5a, 5b, 5j) | **finger: pass (user, 2026-11-25, on the touchscreen); mouse + scripted: pass** | Probe (Group 1) and the Group 3 finger check by the user; scripted `drag_check.mjs` 14/14 (mouse + **emulated** touch). Double-click-to-edit / tick / delete by finger after the move to pointer events: scripted only |
+| C | Order persists (5h) — blocker | **backend pass; live not done** | pytest: order survives a fresh `TaskManager`, deletes, stale ids; a throwaway backend returned 200 for task and duration `reorder` and the new order; the scripted mute run survived a real backend restart. **Not done on the live app** (needs the table drop below) |
+| C2 | Events by time, completed tasks last | **scripted pass** | `order_check.mjs` 9/9. Event-edit path in a live browser not clicked |
+| D | Red pause button | **scripted pass** | colours and 1024x600 screenshots read by eye. Not looked at on the touchscreen |
+| E | Event ring time | **scripted pass** | PM time, non-zero minute, ringing state in a screenshot. Sheet-imported event on the live board not looked at |
+| F | Mute — blocker | **scripted pass; speaker not heard** | `mute_check.mjs`, 21 checks on a real backend copy with `play()`/`pause()` hooked and counted. **The real speaker and a real finger on the mute button are the user's** (steps 2-5, 7). The button was shrunk to 20x20 after the user tried it by finger |
+| G | Fixed size | **scripted pass** | `size_check.mjs`: 18 duration + 5 event cards in every state listed, exactly two distinct sizes (224x88, 224x100). Live tick across `00:09:59` to `00:10:00` not timed (layout depends only on the text) |
+| H | Upgrade note | **documented, not executed live** | README "One-time upgrade step" |
+| I | Hygiene | **scripted: no console errors; backend traces clean** | Live walkthrough hygiene still to watch |
+
+### Closed out 2026-11-25 by the user
+
+The user ran the on-device walkthrough (§ A-I) on the real app, touchscreen and speaker, after the one-time `timers`/`events` table drop, and reported that everything works. The merge bar is met. The per-step table above records how each item was machine-checked beforehand; the user's pass is a summary report, not a step-by-step log.
+
+### Was open before that (kept for the record)
+
+1. **The one-time `timers`/`events` table drop on the live `productivity.db`** (README). Until it is done the live app loads fine but creating a timer/event or pressing mute fails (`no column named muted`). It deletes the day's timers and events, so it was not run from here.
+2. **The on-device walkthrough** (§ A-G above) on the real touchscreen and speaker: in particular § F steps 2-5 and 7 (sound/silence heard), § C steps 2-4 (live backend restart), and § A on the live board.
+3. **The merge bar** (4 blockers at the top) is therefore **not yet met**; merge only after 1 and 2.
 
 ## Deviations
 
-*None yet.* Known up front: the roadmap's "within the stopwatch section / within the timer section" is implemented as one shared list because that is how the dashboard is laid out (`requirements.md` Decision 1).
+*Two, both small.* (1) The roadmap's 59:59 to 1:00:00 is really `00:59:59` to `01:00:00`, because `fmtMs` always prints `HH:MM:SS`. (2) Card heights moved after first sizing (event card 108 to 100 px) and the mute button went from 28x28 to 20x20, both at the user's request. Known up front: the roadmap's "within the stopwatch section / within the timer section" is implemented as one shared list because that is how the dashboard is laid out (`requirements.md` Decision 1).

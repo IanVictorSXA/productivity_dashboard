@@ -34,15 +34,17 @@
 ## Alarm Audio (Phase 4)
 
 - Ring sound played in the browser via the standard `Audio`/HTML5 audio API; the sound file is bundled with the frontend so nothing is fetched at ring time.
-- Applies to timers hitting zero and events reaching their ring time. Per-card muting is Phase 5 (5d).
+- Applies to timers hitting zero and events reaching their ring time. Per-card muting arrived in Phase 5 (5d).
 - Kiosk-mode caveat: browsers gate autoplay behind a prior user gesture — the dashboard's first interaction of the day generally satisfies this, but it needs verifying on the Pi.
 
 ## Dashboard Ordering (Phase 5)
 
-- Stopwatches and timers are **one list** ("Tasks Duration"); a grip handle on each card (lucide `GripVertical`, as on the task rows) starts a drag. The drag mechanism (native HTML5 drag vs hand-written pointer events, for mouse *and* touch) is chosen by a probe on the real touchscreen in Phase 5 Group 1 and recorded in that phase's `requirements.md`. `react-dnd` is in `package.json` but is **not used** anywhere today — don't assume it is the established approach.
-- **The backend owns order.** The persisted `pos` integer column (already on every card table) is set by a `reorder` command that carries the full id list; `get_ApiState` returns each list sorted by `(pos, id)`. In-memory lists stay sorted by `id` (binary search depends on it).
-- Event order is derived from `ring_time` (ascending), not stored — events are not manually reorderable. Task display order is incomplete-then-completed, derived at render; `pos` stores the manual order.
-- A per-card `muted` flag on timers and events is persisted in SQLite (a new column; no migration code, so an existing DB needs a one-time table drop).
+- Stopwatches and timers are **one list** ("Tasks Duration"); a grip handle on each card (lucide `GripVertical`, as on the task rows) starts a drag.
+- **Drag mechanism: hand-written pointer events** (`frontend/src/app/dragReorder.tsx`, `useDragReorder`), chosen by a probe on the real touchscreen (Group 1, 2026-11-25): native HTML5 drag works with a mouse but not with a finger on this Chromium, which was the cause of the task-reorder bug (5j). The handle uses `touch-action: none` and pointer capture, and the drop target is found with `document.elementFromPoint`. Tasks and duration cards share this one implementation. `react-dnd` is in `package.json` but is **not used** anywhere — it is HTML5-drag based and would fail on touch the same way.
+- **The backend owns order.** The persisted `pos` integer column (on every card table) is set by a `reorder` command that carries the full id list, written in one transaction (`Database.execute_many`); `get_ApiState` returns each list sorted by `(pos, id)`. In-memory lists stay sorted by `id` (binary search depends on it). A new card gets `pos = max + 1` in its list.
+- Event order is derived from `ring_time` (ascending), not stored — events are not manually reorderable. Task display order is incomplete-then-completed, derived at render (`frontend/src/app/cardOrder.ts`); `pos` stores the manual order, and a drag on the visible list is mapped back onto the full list so completed tasks keep their slots.
+- Cards are a fixed size (224×88 stopwatch/timer, 224×100 event at 1024×600). The display font (Jockey One) has no tabular digits, so `FixedTime` draws each character in its own fixed-width cell.
+- A per-card `muted` flag on timers and events is persisted in SQLite (a new column; no migration code, so an existing DB needs a one-time table drop — see the README). The `mute` command sets the flag (never toggles); the alarm plays only while an alerting timer/event is **not** muted.
 
 ## Deployment
 
