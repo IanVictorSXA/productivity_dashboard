@@ -1,6 +1,6 @@
 # Plan — Phase 5: Dashboard layout & ordering
 
-Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Group 4 (derived order) built 2026-11-25; Groups 5–7 not started.
+Numbered groups are the intended implementation order. Each group should be independently committable and leave the app working. Scope, decisions and reasons are in `requirements.md`; this file is the work list. Group 1 done 2026-11-25 (pointer events chosen); Group 2 (backend order) done 2026-11-25, committed `f8441ce`; Group 3 (frontend drag) built 2026-11-25, finger-verified by the user 2026-11-25; Group 4 (derived order) done and committed `e7002b8`; Group 5 (card visuals) built 2026-11-25; Groups 6–7 not started.
 
 Branch: `phase5-dashboard-ordering`.
 
@@ -55,10 +55,12 @@ Prove how a card can be dragged by **mouse and by finger** on this Pi before any
 
 ## 5. Card visuals: fixed size, red pause, event ring-time line (5c, 5e, 5i)
 
-- [ ] **5e** — `DurationCardView`: running → pause button red (new colour token chosen to be clearly different from the blue play button and distinct from the `#e03555` alert outline); not running → blue play button as today.
-- [ ] **5i** — `EventCardView`: small gray `h:mm AM/PM` line under the countdown, from `card.ringTime`, shown in all states.
-- [ ] **5c** — tabular numerals on all countdown/stopwatch digits, explicit fixed width and height on duration cards and event cards, content that can overflow (long label, `DONE!`, `HH:MM:SS`, the ring-time line) clipped or truncated rather than allowed to resize. Pick the pixel size against a screenshot at 1024×600 and record it here.
-- [ ] Scripted measurement (headless Chromium over CDP, as in Phase 4, on a faked network layer so the real DB is untouched): card width/height identical at `09:59`→`10:00`, `59:59`→`1:00:00`, in `DONE!`, and for the longest allowed label. Results recorded in `validation.md`.
+- [x] (2026-11-25) **5e** — `DurationCardView`: running → pause button red (`RUNNING_RED = #dc2626`, vs the blue play `#2250c4` and the `#e03555` alert outline — the button is hidden while ringing so those never meet); not running → blue play button as before.
+- [x] (2026-11-25) **5i** — `EventCardView`: small gray (`#7f8aa3`, `text-sm` = 14px on a 20px line; was `text-xs` 12px, raised at the user's request 2026-11-25) `h:mm AM/PM` line under the countdown from `card.ringTime` (`fmtRingClock`), shown in all states including ringing.
+- [x] (2026-11-25) **5c** — explicit fixed size on both card kinds, content clipped/truncated rather than resizing. **Chosen sizes at 1024×600: 224 × 88 px for stopwatch/timer cards, 224 × 100 px for event cards (was 108; trimmed at the user's request — the content needs 98px inside the 1px border, so 100 is the tightest that never clips)** (`CARD_W`, `DURATION_CARD_H`, `EVENT_CARD_H` in `App.tsx`); three cards fit per row beside the 25% task column. **`tabular-nums` alone did not work** — measured in the real browser, Jockey One has no tabular-figure feature: `11:11:11` is 76.75px wide and `00:00:00` is 114.19px, with or without `font-variant-numeric`. So each character is drawn in its own fixed-width cell (`FixedTime`: digits `0.56em`, colon `0.34em`; the widest digit is 0.49em in Jockey One and 0.56em in the sans-serif fallback, so it holds even if the Google font fails to load).
+- [x] (2026-11-25, scripted) Scripted measurement (headless Chromium over CDP on a faked `/api`, script `size_check.mjs` in the session scratchpad, 1024×600): 18 duration cards and 5 event cards, all 224×88 / 224×100 — stopwatch values `00:00:00`, `00:09:59`, `00:10:00`, `00:59:59`, `01:00:00`, `23:59:59`, `10:48:08`; timers `00:05:00`, `09:58:08`; running stopwatch and timer; ringing `DONE!` / `RING!`; a 60-character label on both kinds (ellipsis); events 4 min, 8 h, 13 h, 30 h out, and ringing. Distinct sizes: exactly two (one per card kind). Nothing clipped except by design (the long label's ellipsis). Screenshots read by eye: running cards red, idle blue, ringing none. Results in `validation.md`.
+
+*Notes: `fmtMs` always prints `HH:MM:SS`, so the roadmap's "`59:59` → `1:00:00`" is really `00:59:59` → `01:00:00`. Measured statically (values set directly) rather than by watching a live tick — layout depends only on the text, so the two are equivalent; a live tick was not timed. Group 3/4 scripts re-run after this change: 14/14 and 9/9; suite 164.*
 
 ## 6. Mute on timers and events (5d)
 

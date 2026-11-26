@@ -106,6 +106,30 @@ function fmtMs(ms: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+// Jockey One has no tabular-figure feature (measured: "11:11:11" is 77px wide, "00:00:00" 114px),
+// so `font-variant-numeric` alone cannot stop a card resizing as digits change. Each character
+// gets its own fixed-width cell instead: 0.56em covers the widest digit in Jockey One (0.49em)
+// and in the sans-serif fallback (0.56em); colons get 0.34em.
+function FixedTime({ text }: { text: string }) {
+  return (
+    <span className="whitespace-nowrap" style={{ display: "inline-flex" }}>
+      {[...text].map((ch, i) => (
+        <span key={i} style={{ display: "inline-block", width: ch === ":" ? "0.34em" : "0.56em", textAlign: "center" }}>{ch}</span>
+      ))}
+    </span>
+  );
+}
+
+// Same card footprint in every state (idle, running, ringing) and for any label length or time.
+// Chosen against a 1024x600 measurement (see plan.md Group 5): content is clipped, never allowed to resize.
+const CARD_W = 224;
+const DURATION_CARD_H = 88;
+const EVENT_CARD_H = 100;
+
+// Pause-button colour for a running card (5e): clearly not the play button's blue, and different
+// from the alert outline's #e03555 (the button is hidden while a card rings, so they never meet).
+const RUNNING_RED = "#dc2626";
+
 function parseHhMmSs(hh: string, mm: string, ss: string): number {
   return ((parseInt(hh) || 0) * 3600 + (parseInt(mm) || 0) * 60 + (parseInt(ss) || 0)) * 1000;
 }
@@ -137,6 +161,12 @@ function msToRingInputs(d: Date): { hh: string; mm: string; ampm: "AM" | "PM" } 
   if (h > 12) h -= 12;
   if (h === 0) h = 12;
   return { hh: String(h).padStart(2, "0"), mm: String(m).padStart(2, "0"), ampm };
+}
+
+/** Clock time shown under an event's countdown: "3:05 PM" (12-hour, local timezone). */
+function fmtRingClock(d: Date): string {
+  const { hh, mm, ampm } = msToRingInputs(d);
+  return `${parseInt(hh)}:${mm} ${ampm}`;
 }
 
 function msUntil(d: Date): number {
@@ -931,8 +961,9 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
   const remaining = msUntil(card.ringTime);
   return (
     <div
-      className="relative rounded-xl px-4 py-2 flex flex-col min-w-[148px]"
+      className="relative rounded-xl px-4 py-2 flex flex-col shrink-0 overflow-hidden"
       style={{
+        width: CARD_W, height: EVENT_CARD_H, boxSizing: "border-box",
         background: card.alerting ? "#3a0a14" : "#0d1628",
         border: card.alerting ? "2px solid #e03555" : "1px solid rgba(61,110,234,0.3)",
         boxShadow: "0 0 12px rgba(61,110,234,0.12)",
@@ -942,15 +973,17 @@ function EventCardView({ card, onEdit, onDelete, onDismiss }: {
       onClick={() => card.alerting && onDismiss()}
     >
       <div className="flex items-center justify-between mb-1 gap-2">
-        <span className="text-sm truncate" style={{ color: "#b0c8f0" }}>{card.label}</span>
+        <span className="text-sm truncate min-w-0" style={{ color: "#b0c8f0" }}>{card.label}</span>
         <div className="flex items-center gap-1 shrink-0">
           <IconBtn onClick={e => { e.stopPropagation(); onEdit(); }}><Pencil size={9} className="text-blue-300" /></IconBtn>
           <IconBtn onClick={e => { e.stopPropagation(); onDelete(); }}><X size={9} className="text-blue-300" /></IconBtn>
         </div>
       </div>
-      <span className="text-3xl font-bold tracking-wider text-white">
-        {card.alerting ? "RING!" : fmtMs(remaining)}
+      <span className="text-3xl font-bold text-white whitespace-nowrap">
+        {card.alerting ? "RING!" : <FixedTime text={fmtMs(remaining)} />}
       </span>
+      {/* 5i: when it will ring, in every state (including while ringing) */}
+      <span className="text-sm whitespace-nowrap" style={{ color: "#7f8aa3" }}>{fmtRingClock(card.ringTime)}</span>
     </div>
   );
 }
@@ -974,8 +1007,9 @@ function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, 
   return (
     <div
       {...itemProps}
-      className="relative rounded-xl pr-4 flex min-w-[160px]"
+      className="relative rounded-xl pr-4 flex shrink-0 overflow-hidden"
       style={{
+        width: CARD_W, height: DURATION_CARD_H, boxSizing: "border-box",
         opacity: dragging ? 0.4 : 1,
         outline: dropTarget ? "2px solid #3d6eea" : "none",
         background: "#0d1628",
@@ -1008,13 +1042,13 @@ function DurationCardView({ card, handleProps, itemProps, dragging, dropTarget, 
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-3xl font-bold tracking-wider text-white">
-          {card.alerting ? "DONE!" : fmtMs(display)}
+        <span className="text-3xl font-bold text-white whitespace-nowrap">
+          {card.alerting ? "DONE!" : <FixedTime text={fmtMs(display)} />}
         </span>
         {!card.alerting && (
           <button
             className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: isRunning ? "#1a2d6e" : "#2250c4" }}
+            style={{ background: isRunning ? RUNNING_RED : "#2250c4" }}
             onClick={e => { e.stopPropagation(); onToggle(); }}
           >
             {isRunning

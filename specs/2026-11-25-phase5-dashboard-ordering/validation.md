@@ -79,7 +79,7 @@ Set up first: start the app on a **backed-up or throwaway** `productivity.db` (t
 
 ### G. Fixed size (5c) — not a blocker
 
-1. Watch a stopwatch cross `09:59` → `10:00` and `59:59` → `1:00:00`; a timer count down across the same: the card's width and height do not change by a pixel (scripted measurement, results below).
+1. Watch a stopwatch cross `00:09:59` → `00:10:00` and `00:59:59` → `01:00:00`; a timer count down across the same (`00:59:59` → `01:00:00` — the display is always `HH:MM:SS`): the card's width and height do not change by a pixel (scripted measurement, results below).
 2. `DONE!`, a very long label, and an event with the ring-time line are all the same size as an ordinary card.
 3. The wrapped layout does not jump around as numbers tick.
 
